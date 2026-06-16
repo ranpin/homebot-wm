@@ -14,7 +14,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
@@ -140,7 +140,7 @@ def main() -> None:
 
     params = get_trainable_params(encoder, dynamics)
     optimizer = AdamW(params, lr=args.lr, weight_decay=args.weight_decay)
-    scaler = GradScaler()
+    scaler = GradScaler("cuda")
 
     log_vram("after model init")
 
@@ -156,7 +156,7 @@ def main() -> None:
         optimizer.zero_grad()
 
         for step, batch in enumerate(pbar):
-            with autocast(enabled=torch.cuda.is_available()):
+            with autocast("cuda", enabled=torch.cuda.is_available()):
                 loss = train_step(batch, encoder, dynamics, device)
                 loss = loss / args.grad_accum
 
@@ -166,6 +166,7 @@ def main() -> None:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
                 scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad()
 
             running_loss += loss.item() * args.grad_accum
