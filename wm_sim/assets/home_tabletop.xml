@@ -66,6 +66,5 @@
   <sensor>
     <framepos name="agent_pos" objtype="body" objname="agent"/>
     <framepos name="block_pos" objtype="body" objname="block"/>
-    <framevel name="agent_vel" objtype="body" objname="agent"/>
   </sensor>
 </mujoco>
