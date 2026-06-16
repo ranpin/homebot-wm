@@ -1,11 +1,12 @@
 """Scripted expert policy for data collection.
 
 Strategy:
-  1. Navigate behind the block (opposite side from target)
-  2. Push the block toward the target with speed proportional to distance
-  3. Slow down when block is close to target to avoid overshooting
+  1. If block is near a wall, first push it away from the wall
+  2. Navigate behind the block (opposite side from push direction)
+  3. Push the block with speed proportional to distance to target
+  4. Slow down when block is close to target to avoid overshooting
 
-Includes simple obstacle avoidance via repulsive potential fields.
+Includes obstacle and wall avoidance via repulsive potential fields.
 """
 
 import numpy as np
@@ -16,6 +17,9 @@ OBSTACLES = [
     {"pos": np.array([-0.8, -0.5]), "radius": 0.8},
     {"pos": np.array([0.5, -1.2]), "radius": 0.5},
 ]
+
+WALL_LIMIT = 2.5
+WALL_MARGIN = 0.5
 
 
 class ScriptedExpert:
@@ -31,7 +35,7 @@ class ScriptedExpert:
         self.avoid_gain = avoid_gain
         self.avoid_radius = avoid_radius
 
-    def _avoidance_force(self, pos: np.ndarray) -> np.ndarray:
+    def _obstacle_avoidance(self, pos: np.ndarray) -> np.ndarray:
         force = np.zeros(2, dtype=np.float32)
         for obs in OBSTACLES:
             diff = pos - obs["pos"]
@@ -40,20 +44,40 @@ class ScriptedExpert:
                 force += self.avoid_gain * diff / (d * d)
         return force
 
+    def _wall_avoidance(self, pos: np.ndarray, gain: float = 0.5) -> np.ndarray:
+        force = np.zeros(2, dtype=np.float32)
+        for axis in range(2):
+            if pos[axis] > WALL_LIMIT - WALL_MARGIN:
+                force[axis] -= gain * (pos[axis] - (WALL_LIMIT - WALL_MARGIN))
+            elif pos[axis] < -WALL_LIMIT + WALL_MARGIN:
+                force[axis] += gain * ((-WALL_LIMIT + WALL_MARGIN) - pos[axis])
+        return force
+
     def __call__(self, state: np.ndarray) -> np.ndarray:
         agent_pos = state[:2]
-        agent_vel = state[2:4]
         block_pos = state[4:6]
 
-        to_target = self.target_pos - block_pos
-        dist_to_target = float(np.linalg.norm(to_target))
-
+        dist_to_target = float(np.linalg.norm(self.target_pos - block_pos))
         if dist_to_target < 0.3:
             return np.zeros(2, dtype=np.float32)
 
-        to_target_dir = to_target / dist_to_target
+        block_near_wall = any(
+            abs(block_pos[i]) > WALL_LIMIT - WALL_MARGIN for i in range(2)
+        )
 
-        push_point = block_pos - to_target_dir * 0.35
+        if block_near_wall:
+            push_dir = self._wall_avoidance(block_pos, gain=1.0)
+            push_norm = float(np.linalg.norm(push_dir))
+            if push_norm > 1e-6:
+                push_dir = push_dir / push_norm
+            else:
+                push_dir = (self.target_pos - block_pos)
+                push_dir /= float(np.linalg.norm(push_dir))
+        else:
+            push_dir = self.target_pos - block_pos
+            push_dir /= float(np.linalg.norm(push_dir))
+
+        push_point = block_pos - push_dir * 0.35
         to_push = push_point - agent_pos
         dist_to_push = float(np.linalg.norm(to_push))
 
@@ -62,7 +86,7 @@ class ScriptedExpert:
         if dist_to_push > 0.25:
             desired = speed_scale * to_push / max(dist_to_push, 1e-6)
         else:
-            desired = speed_scale * to_target_dir
+            desired = speed_scale * push_dir
 
-        desired += self._avoidance_force(agent_pos)
+        desired += self._obstacle_avoidance(agent_pos)
         return np.clip(desired, -1.0, 1.0).astype(np.float32)
