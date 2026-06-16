@@ -1,0 +1,47 @@
+# Default training configuration
+defaults:
+  - model: diffusion_policy
+  - sim: isaac_home
+  - compress: null
+
+# Training
+training:
+  batch_size: 64
+  num_epochs: 100
+  learning_rate: 1e-4
+  optimizer: adamw
+  weight_decay: 1e-4
+  scheduler: cosine
+  warmup_epochs: 5
+
+# World model
+world_model:
+  encoder:
+    backbone: resnet18
+    pretrained: true
+    input_modality: rgbd
+  dynamics:
+    type: diffusion
+    num_diffusion_steps: 100
+    hidden_dim: 256
+    num_layers: 4
+  planner:
+    type: cem
+    num_samples: 64
+    num_elites: 8
+    horizon: 10
+
+# Evaluation
+eval:
+  num_episodes: 100
+  save_video: true
+  metrics:
+    - success_rate
+    - path_efficiency
+    - inference_latency
+
+# Logging
+logging:
+  wandb: true
+  project: homebot-wm
+  log_interval: 10
