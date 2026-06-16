@@ -61,7 +61,7 @@ class HomeTabletopEnv(gym.Env):
             ),
         })
 
-        self.action_space = spaces.Box(low=-2.0, high=2.0, shape=(2,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self._step_count = 0
 
     def _get_state(self) -> np.ndarray:

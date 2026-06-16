@@ -63,4 +63,4 @@ class ScriptedExpert:
             desired = self.push_gain * to_target_dir
 
         desired += self._avoidance_force(agent_pos)
-        return np.clip(desired, -2.0, 2.0).astype(np.float32)
+        return np.clip(desired, -1.0, 1.0).astype(np.float32)

@@ -30,8 +30,8 @@ class CEMPlanner:
         horizon: int = 10,
         action_dim: int = 2,
         num_iterations: int = 3,
-        action_low: float = -2.0,
-        action_high: float = 2.0,
+        action_low: float = -1.0,
+        action_high: float = 1.0,
     ):
         self.dynamics = dynamics
         self.num_samples = num_samples
