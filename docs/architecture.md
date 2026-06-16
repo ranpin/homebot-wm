@@ -39,7 +39,7 @@ HomeBot-WM is a world model-driven algorithm framework for home robotics, target
          ↕                                    ↕
 ┌──────────────────┐              ┌──────────────────────┐
 │     wm_sim       │              │      wm_eval         │
-│  Isaac Sim       │              │  Nav/Manip/Deploy    │
+│  MuJoCo (CPU)    │              │  Nav/Manip/Deploy    │
 │  家庭场景仿真    │              │  Metrics & Reports   │
 └──────────────────┘              └──────────────────────┘
 ```
@@ -50,7 +50,7 @@ HomeBot-WM is a world model-driven algorithm framework for home robotics, target
 
 The central module that learns environment dynamics.
 
-- **encoder/**: Visual encoder (ViT or CNN backbone) that processes RGB-D observations into latent representations. Pre-trained on large-scale datasets and fine-tuned for home environments.
+- **encoder/**: Visual encoder (frozen ResNet18 backbone + lightweight adapter) that processes RGB-D observations into latent representations. Encoder is frozen to stay within 8GB VRAM training budget; only adapter layers are trained.
 - **dynamics/**: Diffusion-based dynamics model that predicts future states given current observation and proposed action sequence. Inspired by Diffusion Policy and UniSim.
 - **planner/**: Action planner that uses the dynamics model to evaluate candidate action sequences (CEM, MPC, or shooting methods) and select the optimal one.
 
@@ -85,9 +85,12 @@ End-to-end deployment pipeline for Jetson AGX Orin.
 
 ### wm_sim — Simulation
 
-- Isaac Sim-based home environment (kitchen, living room, bedroom)
+- MuJoCo-based home environment (kitchen, living room, bedroom) — runs on CPU to preserve GPU VRAM for training
+- Two-phase data pipeline: offline collection → static HDF5 datasets → training from disk
 - Domain randomization for Sim2Real transfer
-- Automated data collection and annotation pipeline
+- Automated data collection with scripted/expert policies
+
+**Future iteration — Isaac Sim + offline data**: When GPU resources permit (multi-GPU or cloud), migrate to Isaac Sim for higher-fidelity rendering and physics. The data collection pipeline remains the same — collect trajectories offline, store to disk, train separately. This decouples simulation fidelity from training VRAM budget.
 
 ### wm_eval — Evaluation
 
@@ -111,7 +114,22 @@ Robot Controller → execute action
 
 ## Design Principles
 
-1. **Simulation-first**: All development and validation starts in Isaac Sim before real hardware.
-2. **Compression-aware**: Models are designed with deployment constraints in mind from day one.
-3. **Modular**: Each module can be developed, tested, and replaced independently.
-4. **Progressive**: Start with full-precision models, then compress iteratively.
+1. **Simulation-first**: All development and validation starts in MuJoCo (CPU) before real hardware.
+2. **VRAM-aware**: All model designs target the 8GB VRAM training budget (RTX 3070). Simulation runs on CPU; training uses mixed precision, frozen encoders, and gradient checkpointing.
+3. **Compression-aware**: Models are designed with deployment constraints in mind from day one.
+4. **Modular**: Each module can be developed, tested, and replaced independently.
+5. **Progressive**: Start with full-precision models, then compress iteratively.
+
+## VRAM Budget (Training: RTX 3070 8GB)
+
+| Component | Strategy | Estimated VRAM |
+|-----------|----------|---------------|
+| Visual encoder | Frozen ResNet18, no grad | ~0.1 GB |
+| Dynamics model (Diffusion) | hidden_dim=128, 3 layers, AMP FP16 | ~1.5 GB |
+| Planner | CEM, no backprop | ~0.2 GB |
+| Optimizer states (AdamW) | Only adapter + dynamics params | ~1.0 GB |
+| Activations + gradients | Gradient checkpointing, batch_size=8 | ~3.0 GB |
+| MuJoCo sim | CPU only | 0 GB |
+| **Total** | | **~5.8 GB** |
+
+Batch size kept at 8 with gradient accumulation (effective batch = 64) to leave headroom.

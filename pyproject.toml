@@ -36,7 +36,8 @@ compress = [
     "onnxruntime>=1.16.0",
 ]
 sim = [
-    "isaacsim>=4.0.0",
+    "mujoco>=3.0.0",
+    "dm-control>=1.0.0",
 ]
 
 [tool.setuptools.packages.find]

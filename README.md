@@ -8,7 +8,7 @@
 
 - **世界模型驱动**：使用扩散型世界模型（Diffusion Policy）统一导航与操作任务
 - **轻量化部署**：结构化剪枝 → 知识蒸馏 → TensorRT 量化，实现 Orin 实时推理
-- **仿真优先**：基于 Isaac Sim 构建家庭场景仿真环境，支持 Sim2Real 迁移
+- **仿真优先**：基于 MuJoCo 构建家庭场景仿真环境（CPU 可跑，不占显存），后续可迁移至 Isaac Sim
 - **SD 优化经验复用**：将 Stable Diffusion 压缩优化技术迁移到世界模型领域
 
 ## 技术架构
@@ -35,7 +35,7 @@ homebot-wm/
 ├── wm_deploy/        # Orin 部署引擎（ONNX 导出、TensorRT、推理流水线）
 ├── wm_nav/           # 导航模块
 ├── wm_manip/         # 操作模块
-├── wm_sim/           # 仿真环境（Isaac Sim）
+├── wm_sim/           # 仿真环境（MuJoCo，后续可迁移 Isaac Sim）
 ├── wm_eval/          # 评估框架
 ├── configs/          # 配置文件
 ├── scripts/          # 训练/部署脚本
@@ -49,7 +49,7 @@ homebot-wm/
 | 组件 | 选型 |
 |------|------|
 | 深度学习框架 | PyTorch 2.x |
-| 仿真环境 | Isaac Sim |
+| 仿真环境 | MuJoCo（当前）→ Isaac Sim（后续）|
 | 机器人中间件 | ROS 2 Humble |
 | 部署引擎 | TensorRT |
 | 模型格式 | ONNX → TRT Engine |
@@ -65,6 +65,15 @@ source .venv/bin/activate
 # 安装依赖
 pip install -e ".[dev]"
 ```
+
+## 硬件约束
+
+训练环境为单卡 RTX 3070（8GB VRAM），所有模型设计均在此约束下：
+
+- **仿真与训练分离**：MuJoCo 在 CPU 运行，GPU 显存全部留给训练
+- **两阶段流程**：先离线采集数据集 → 再从磁盘训练，避免仿真+训练共享显存
+- **小模型优先**：冻结预训练编码器、LoRA 微调、AMP FP16、gradient checkpointing
+- **目标部署**：NVIDIA Jetson AGX Orin 64GB
 
 ## 里程碑
 

@@ -1,35 +1,63 @@
 # Default training configuration
+# Designed for RTX 3070 (8GB VRAM) training budget
 defaults:
   - model: diffusion_policy
-  - sim: isaac_home
+  - sim: mujoco_home
   - compress: null
 
-# Training
+# Training (small batch + gradient accumulation to fit 8GB VRAM)
 training:
-  batch_size: 64
+  batch_size: 8
+  gradient_accumulation_steps: 8  # effective batch size = 64
   num_epochs: 100
   learning_rate: 1e-4
   optimizer: adamw
   weight_decay: 1e-4
   scheduler: cosine
   warmup_epochs: 5
+  amp: true                          # mixed precision FP16 (mandatory)
+  gradient_checkpointing: true       # save activation memory
 
 # World model
 world_model:
   encoder:
     backbone: resnet18
     pretrained: true
+    frozen: true                     # freeze encoder, train adapter only
+    adapter_dim: 64                  # lightweight adapter layer
     input_modality: rgbd
   dynamics:
     type: diffusion
-    num_diffusion_steps: 100
-    hidden_dim: 256
-    num_layers: 4
+    num_diffusion_steps: 50          # reduced from 100 for speed
+    hidden_dim: 128                  # reduced from 256 for VRAM
+    num_layers: 3                    # reduced from 4 for VRAM
+    lora_rank: 8                     # LoRA adaptation instead of full fine-tune
   planner:
     type: cem
-    num_samples: 64
-    num_elites: 8
+    num_samples: 32                  # reduced from 64
+    num_elites: 4                    # reduced from 8
     horizon: 10
+
+# Data pipeline (offline collection → static dataset → training from disk)
+data:
+  collection:
+    simulator: mujoco
+    num_episodes: 2000
+    script_policy: true              # scripted expert for data collection
+    save_path: ./data/trajectories
+  training:
+    dataset_path: ./data/trajectories
+    format: hdf5
+    num_workers: 4
+    prefetch_factor: 2
+
+# Simulation (MuJoCo on CPU, no GPU overhead)
+sim:
+  backend: mujoco
+  device: cpu
+  render_mode: offscreen
+  headless: true
+  domain_randomization: true
 
 # Evaluation
 eval:
