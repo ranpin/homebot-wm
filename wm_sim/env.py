@@ -48,7 +48,7 @@ class HomeTabletopEnv(gym.Env):
         self.render_mode = render_mode
 
         self.target_pos = target_pos if target_pos is not None else np.array([2.0, 2.0])
-        self.success_threshold = 0.4
+        self.success_threshold = 0.6
 
         self._renderer = mujoco.Renderer(self.model, height=image_size, width=image_size)
         self._camera_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, "overhead")

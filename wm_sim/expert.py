@@ -1,8 +1,9 @@
 """Scripted expert policy for data collection.
 
-Two-phase strategy:
+Strategy:
   1. Navigate behind the block (opposite side from target)
-  2. Push the block toward the target
+  2. Push the block toward the target with speed proportional to distance
+  3. Slow down when block is close to target to avoid overshooting
 
 Includes simple obstacle avoidance via repulsive potential fields.
 """
@@ -11,9 +12,9 @@ import numpy as np
 
 
 OBSTACLES = [
-    {"pos": np.array([1.0, 0.5]), "radius": 0.55},
-    {"pos": np.array([-0.8, -0.5]), "radius": 0.75},
-    {"pos": np.array([0.5, -1.2]), "radius": 0.45},
+    {"pos": np.array([1.0, 0.5]), "radius": 0.6},
+    {"pos": np.array([-0.8, -0.5]), "radius": 0.8},
+    {"pos": np.array([0.5, -1.2]), "radius": 0.5},
 ]
 
 
@@ -23,12 +24,10 @@ class ScriptedExpert:
     def __init__(
         self,
         target_pos: np.ndarray,
-        push_gain: float = 1.5,
         avoid_gain: float = 0.8,
-        avoid_radius: float = 0.6,
+        avoid_radius: float = 0.7,
     ):
         self.target_pos = np.asarray(target_pos, dtype=np.float32)
-        self.push_gain = push_gain
         self.avoid_gain = avoid_gain
         self.avoid_radius = avoid_radius
 
@@ -43,24 +42,27 @@ class ScriptedExpert:
 
     def __call__(self, state: np.ndarray) -> np.ndarray:
         agent_pos = state[:2]
+        agent_vel = state[2:4]
         block_pos = state[4:6]
 
         to_target = self.target_pos - block_pos
-        to_target_norm = float(np.linalg.norm(to_target))
+        dist_to_target = float(np.linalg.norm(to_target))
 
-        if to_target_norm < 1e-6:
+        if dist_to_target < 0.3:
             return np.zeros(2, dtype=np.float32)
 
-        to_target_dir = to_target / to_target_norm
+        to_target_dir = to_target / dist_to_target
 
-        approach_point = block_pos - to_target_dir * 0.4
-        to_approach = approach_point - agent_pos
-        dist_to_approach = float(np.linalg.norm(to_approach))
+        push_point = block_pos - to_target_dir * 0.35
+        to_push = push_point - agent_pos
+        dist_to_push = float(np.linalg.norm(to_push))
 
-        if dist_to_approach > 0.3:
-            desired = self.push_gain * to_approach / max(dist_to_approach, 1e-6)
+        speed_scale = min(1.0, dist_to_target / 1.5)
+
+        if dist_to_push > 0.25:
+            desired = speed_scale * to_push / max(dist_to_push, 1e-6)
         else:
-            desired = self.push_gain * to_target_dir
+            desired = speed_scale * to_target_dir
 
         desired += self._avoidance_force(agent_pos)
         return np.clip(desired, -1.0, 1.0).astype(np.float32)
