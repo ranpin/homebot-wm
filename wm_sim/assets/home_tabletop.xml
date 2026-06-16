@@ -1,0 +1,71 @@
+<mujoco model="home_tabletop">
+  <compiler angle="radian" autolimits="true"/>
+
+  <option timestep="0.01" integrator="RK4" gravity="0 0 -9.81">
+    <flag contact="enable"/>
+  </option>
+
+  <default>
+    <joint damping="0.5" armature="0.01"/>
+    <geom contype="1" conaffinity="1" friction="0.8 0.02 0.01"/>
+  </default>
+
+  <asset>
+    <texture name="floor_tex" type="2d" builtin="flat" rgb1="0.8 0.8 0.8" rgb2="0.7 0.7 0.7" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tex" specular="0.0" shininess="0.0"/>
+    <material name="wall_mat" rgba="0.6 0.6 0.7 1" specular="0.1"/>
+    <material name="obstacle_mat" rgba="0.4 0.2 0.1 1" specular="0.2"/>
+    <material name="block_mat" rgba="0.2 0.6 0.8 1" specular="0.3"/>
+    <material name="target_mat" rgba="0.2 0.8 0.3 0.4" specular="0.0"/>
+    <material name="agent_mat" rgba="0.9 0.3 0.2 1" specular="0.5" shininess="0.8"/>
+  </asset>
+
+  <worldbody>
+    <light name="main_light" pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+
+    <!-- Floor -->
+    <geom name="floor" type="plane" size="3 3 0.1" pos="0 0 0" material="floor_mat"/>
+
+    <!-- Walls -->
+    <geom name="wall_n" type="box" size="3 0.05 0.5" pos="0 3 0.5" material="wall_mat" contype="0" conaffinity="0"/>
+    <geom name="wall_s" type="box" size="3 0.05 0.5" pos="0 -3 0.5" material="wall_mat" contype="0" conaffinity="0"/>
+    <geom name="wall_e" type="box" size="0.05 3 0.5" pos="3 0 0.5" material="wall_mat" contype="0" conaffinity="0"/>
+    <geom name="wall_w" type="box" size="0.05 3 0.5" pos="-3 0 0.5" material="wall_mat" contype="0" conaffinity="0"/>
+
+    <!-- Obstacles -->
+    <geom name="obs1" type="box" size="0.3 0.3 0.25" pos="1.0 0.5 0.25" material="obstacle_mat"/>
+    <geom name="obs2" type="box" size="0.25 0.5 0.25" pos="-0.8 -0.5 0.25" material="obstacle_mat"/>
+    <geom name="obs3" type="cylinder" size="0.2 0.25" pos="0.5 -1.2 0.25" material="obstacle_mat"/>
+
+    <!-- Target zone (visual only) -->
+    <geom name="target_zone" type="box" size="0.4 0.4 0.01" pos="2.0 2.0 0.01" material="target_mat" contype="0" conaffinity="0"/>
+
+    <!-- Movable block -->
+    <body name="block" pos="0 0 0.15">
+      <joint name="block_x" type="slide" axis="1 0 0" range="-2.8 2.8"/>
+      <joint name="block_y" type="slide" axis="0 1 0" range="-2.8 2.8"/>
+      <geom name="block_geom" type="box" size="0.15 0.15 0.15" material="block_mat" mass="0.5"/>
+    </body>
+
+    <!-- Agent (point-mass sphere) -->
+    <body name="agent" pos="-1.5 -1.5 0.2">
+      <joint name="agent_x" type="slide" axis="1 0 0" range="-2.8 2.8" damping="1.0"/>
+      <joint name="agent_y" type="slide" axis="0 1 0" range="-2.8 2.8" damping="1.0"/>
+      <geom name="agent_geom" type="sphere" size="0.15" material="agent_mat" mass="1.0"/>
+    </body>
+
+    <!-- Overhead camera -->
+    <camera name="overhead" pos="0 0 5" xyaxes="1 0 0 0 1 0" fovy="60"/>
+  </worldbody>
+
+  <actuator>
+    <motor name="agent_fx" joint="agent_x" ctrlrange="-2.0 2.0" gear="1"/>
+    <motor name="agent_fy" joint="agent_y" ctrlrange="-2.0 2.0" gear="1"/>
+  </actuator>
+
+  <sensor>
+    <framepos name="agent_pos" objtype="body" objname="agent"/>
+    <framepos name="block_pos" objtype="body" objname="block"/>
+    <framevel name="agent_vel" objtype="body" objname="agent"/>
+  </sensor>
+</mujoco>
