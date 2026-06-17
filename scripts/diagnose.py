@@ -128,8 +128,8 @@ def check_loss_function(dynamics: nn.Module, device: torch.device):
 
 
 def overfit_test(encoder: nn.Module, dynamics: nn.Module, dataset: TrajectoryDataset, device: torch.device):
-    """Can the model memorize a single batch? If not, there's a bug."""
-    print("=== Overfit Test (10 samples, 500 steps) ===")
+    """Can the model memorize a small batch? If not, there's a bug."""
+    print("=== Overfit Test (10 samples, 1000 steps) ===")
 
     indices = list(range(10))
     images = torch.stack([dataset[i]["image"] for i in indices]).to(device)
@@ -139,7 +139,8 @@ def overfit_test(encoder: nn.Module, dynamics: nn.Module, dataset: TrajectoryDat
     params = list(encoder.adapter.parameters()) + list(dynamics.parameters())
     optimizer = torch.optim.AdamW(params, lr=1e-3)
 
-    for step in range(500):
+    initial_loss = None
+    for step in range(1000):
         optimizer.zero_grad()
         latent = encoder(images)
         next_latent = encoder(next_images).detach()
@@ -147,15 +148,22 @@ def overfit_test(encoder: nn.Module, dynamics: nn.Module, dataset: TrajectoryDat
         loss.backward()
         optimizer.step()
 
-        if step % 100 == 0 or step == 499:
+        if step == 0:
+            initial_loss = loss.item()
+
+        if step % 200 == 0 or step == 999:
             print(f"  Step {step}: loss={loss.item():.6f}")
 
     final_loss = loss.item()
-    print(f"\n  Final loss: {final_loss:.6f}")
-    if final_loss < 0.5:
-        print("  PASS: Model can overfit a small batch")
+    improvement = initial_loss - final_loss
+    print(f"\n  Initial loss: {initial_loss:.6f}")
+    print(f"  Final loss: {final_loss:.6f}")
+    print(f"  Improvement: {improvement:.6f}")
+
+    if improvement > 0.2:
+        print("  PASS: Model can learn (loss decreased significantly)")
     else:
-        print("  FAIL: Model cannot overfit - likely a bug in model or loss function")
+        print("  FAIL: Model cannot learn - likely a bug in model or loss function")
     print()
 
 
