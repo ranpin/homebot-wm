@@ -49,7 +49,7 @@ class DiffusionDynamics(nn.Module):
         self.latent_dim = latent_dim
         self.num_diffusion_steps = num_diffusion_steps
 
-        cond_dim = latent_dim + action_dim
+        cond_dim = latent_dim + action_dim + latent_dim  # current_latent + action + noisy_next_latent
         time_dim = hidden_dim
 
         self.time_embed = nn.Sequential(
@@ -91,7 +91,7 @@ class DiffusionDynamics(nn.Module):
 
         noisy_next = self._noise_forward(next_latent, t, noise)
 
-        cond = torch.cat([latent, action], dim=-1)
+        cond = torch.cat([latent, action, noisy_next], dim=-1)
         h = self.cond_proj(cond) + self.time_embed(t)
         h = self.backbone(h)
         pred_noise = self.head(h)
@@ -106,13 +106,13 @@ class DiffusionDynamics(nn.Module):
         batch_size = latent.shape[0]
 
         x = torch.randn(batch_size, self.latent_dim, device=device)
-        cond = torch.cat([latent, action], dim=-1)
-        cond_proj = self.cond_proj(cond)
+        cond_base = torch.cat([latent, action], dim=-1)
 
         start = max(0, self.num_diffusion_steps - steps)
         for i in reversed(range(start, self.num_diffusion_steps)):
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            h = cond_proj + self.time_embed(t)
+            cond = torch.cat([cond_base, x], dim=-1)
+            h = self.cond_proj(cond) + self.time_embed(t)
             h = self.backbone(h)
             pred_noise = self.head(h)
 
