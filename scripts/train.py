@@ -97,6 +97,7 @@ def main() -> None:
     parser.add_argument("--diffusion_steps", type=int, default=50)
     parser.add_argument("--log_interval", type=int, default=10)
     parser.add_argument("--save_dir", type=str, default="checkpoints")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -147,7 +148,17 @@ def main() -> None:
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    for epoch in range(1, args.epochs + 1):
+    start_epoch = 1
+    if args.resume:
+        print(f"Resuming from {args.resume}")
+        ckpt = torch.load(args.resume, map_location=device)
+        encoder.load_state_dict(ckpt["encoder_state"])
+        dynamics.load_state_dict(ckpt["dynamics_state"])
+        optimizer.load_state_dict(ckpt["optimizer_state"])
+        start_epoch = ckpt["epoch"] + 1
+        print(f"Resuming from epoch {start_epoch}")
+
+    for epoch in range(start_epoch, args.epochs + 1):
         encoder.train()
         dynamics.train()
 
