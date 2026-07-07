@@ -66,7 +66,7 @@ def load_block_decoder(path: str, latent_dim: int, device: torch.device) -> Bloc
 def evaluate_episode(
     env: HomeTabletopEnv,
     encoder: ResNetEncoder,
-    dynamics: DiffusionDynamics,
+    dynamics: nn.Module,
     block_decoder: BlockPositionDecoder,
     planner: CEMPlanner,
     device: torch.device,

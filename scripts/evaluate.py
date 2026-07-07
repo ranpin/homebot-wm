@@ -66,7 +66,7 @@ def load_reward_predictor(path: str, latent_dim: int, device: torch.device) -> R
 def evaluate_episode(
     env: HomeTabletopEnv,
     encoder: ResNetEncoder,
-    dynamics: DiffusionDynamics,
+    dynamics: nn.Module,
     reward_predictor: RewardPredictor,
     planner: CEMPlanner,
     device: torch.device,
