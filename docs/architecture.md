@@ -94,6 +94,12 @@ End-to-end deployment pipeline for Jetson AGX Orin.
 
 **Future iteration — Isaac Sim + offline data**: When GPU resources permit (multi-GPU or cloud), migrate to Isaac Sim for higher-fidelity rendering and physics. The data collection pipeline remains the same — collect trajectories offline, store to disk, train separately. This decouples simulation fidelity from training VRAM budget.
 
+#### Current MVP task & dataset
+
+- **Task** (`HomeTabletopEnv`, `assets/home_tabletop.xml`): top-down 2D *push-block-to-target*. A point-mass agent pushes a block into a fixed target zone at `[1.5, 1.5]` amid 3 fixed obstacles in a walled arena. Observation: 84×84 overhead RGB + 6-D state `[agent_xy, agent_vxy, block_xy]`. Action: 2-D force in `[-1, 1]`. Success: `dist(block, target) < 1.0` within 200 steps. Only the agent/block start positions are randomized; target and obstacles are fixed.
+- **Dataset** (`data/trajectories.h5`, ~235 MB): 2000 episodes / 360,647 transitions collected by a scripted potential-field expert (`wm_sim/expert.py`). Stores image/state/action/reward/success per step.
+- **Data-quality caveat**: the scripted expert only succeeds **~18%** of the time (most episodes time out). This is weak for *imitation*, but acceptable for learning *dynamics* — failed rollouts still contain valid physics transitions (the block decoder reaches ~0.35 error). The main risk is thin state coverage near the target; if closed-loop planning stalls on the "last push", prefer success-weighted resampling or an improved expert over changing the task.
+
 ### wm_eval — Evaluation
 
 - **Navigation**: success rate, path efficiency, collision rate
