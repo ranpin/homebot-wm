@@ -21,7 +21,7 @@ HomeBot-WM is a world model-driven algorithm framework for home robotics, target
 │   ┌────────────┐  ┌────────────┐  ┌────────────────┐       │
 │   │  Visual    │  │  Dynamics  │  │   Action       │       │
 │   │  Encoder   │→ │  Predictor │→ │   Planner      │       │
-│   │  (ViT/CNN) │  │ (Diffusion)│  │ (CEM/MPC)      │       │
+│   │  (ResNet)  │  │(Diff./MLP) │  │ (CEM/MPC)      │       │
 │   └────────────┘  └────────────┘  └────────────────┘       │
 │         ↑                ↑                ↓                  │
 │     RGB-D Input     State+Action    Action Sequence          │
@@ -50,9 +50,11 @@ HomeBot-WM is a world model-driven algorithm framework for home robotics, target
 
 The central module that learns environment dynamics.
 
-- **encoder/**: Visual encoder (frozen ResNet18 backbone + lightweight adapter) that processes RGB-D observations into latent representations. Encoder is frozen to stay within 8GB VRAM training budget; only adapter layers are trained.
-- **dynamics/**: Diffusion-based dynamics model that predicts future states given current observation and proposed action sequence. Inspired by Diffusion Policy and UniSim.
-- **planner/**: Action planner that uses the dynamics model to evaluate candidate action sequences (CEM, MPC, or shooting methods) and select the optimal one.
+- **encoder/**: Visual encoder (frozen ResNet18 backbone + lightweight adapter) that processes RGB observations into latent representations. Encoder is frozen to stay within 8GB VRAM training budget; only adapter layers are trained. **Note:** images must be normalized to `[0, 1]` (divide by 255) at both training and inference — the frozen backbone is sensitive to input scale.
+- **dynamics/**: Latent dynamics model predicting the next latent from `(latent, action)`. Two interchangeable backends are selected at load time via `build_dynamics(config)` on `config['dynamics_type']`:
+  - `diffusion` (`DiffusionDynamics`): DDPM model, full or respaced-DDIM sampling. Inspired by Diffusion Policy / UniSim.
+  - `mlp` (`MLPDynamics`): deterministic **residual** regressor (`next = latent + MLP(latent, action)`), zero-initialized so it starts at the identity baseline. Added because, on the near-static tabletop task, the diffusion backend's per-step sampling variance exceeded the true frame-to-frame latent change and scored *worse than identity* — see the diagnostic below.
+- **planner/**: Action planner that uses the dynamics model to evaluate candidate action sequences (CEM, MPC, or shooting methods) and select the optimal one. `plan(latent, score_fn, num_steps=None)` forwards `num_steps` to the dynamics rollout.
 
 ### wm_compress — Compression Toolkit
 
@@ -98,6 +100,8 @@ End-to-end deployment pipeline for Jetson AGX Orin.
 - **Manipulation**: grasp success rate, task completion rate
 - **Deployment**: inference latency (ms), throughput (FPS), GPU utilization
 
+**Component diagnostic** (`scripts/diagnose_components.py`, CPU-friendly): validates each learned component against dataset ground truth without a full closed-loop run — block-decoder position error, encoder input-normalization sensitivity, and dynamics 1-step rollout MSE **vs. an identity ("no-move") baseline**. A dynamics model is only usable for planning if its rollout MSE beats identity; this is the acceptance gate before closed-loop evaluation.
+
 ## Data Flow
 
 ```
@@ -125,7 +129,7 @@ Robot Controller → execute action
 | Component | Strategy | Estimated VRAM |
 |-----------|----------|---------------|
 | Visual encoder | Frozen ResNet18, no grad | ~0.1 GB |
-| Dynamics model (Diffusion) | hidden_dim=128, 3 layers, AMP FP16 | ~1.5 GB |
+| Dynamics model (Diffusion or residual MLP) | hidden_dim=128–256, 3 layers, AMP FP16 | ~1.5 GB |
 | Planner | CEM, no backprop | ~0.2 GB |
 | Optimizer states (AdamW) | Only adapter + dynamics params | ~1.0 GB |
 | Activations + gradients | Gradient checkpointing, batch_size=8 | ~3.0 GB |
