@@ -70,14 +70,11 @@ class CEMPlanner:
             actions = mean[None] + std[None] * noise
             actions = actions.clamp(self.action_low, self.action_high)
 
-            scores = torch.zeros(self.num_samples, device=device)
-            for s in range(self.num_samples):
-                state = latent
-                for t in range(self.horizon):
-                    state = self.dynamics.predict_next(
-                        state, actions[s, t].unsqueeze(0), num_steps=num_steps
-                    )
-                scores[s] = score_fn(state)
+            # Roll all candidate sequences through the dynamics in a single batch.
+            state = latent.expand(self.num_samples, -1).contiguous()
+            for t in range(self.horizon):
+                state = self.dynamics.predict_next(state, actions[:, t], num_steps=num_steps)
+            scores = score_fn(state)  # (num_samples,)
 
             elite_idx = scores.topk(self.num_elites).indices
             elite_actions = actions[elite_idx]
