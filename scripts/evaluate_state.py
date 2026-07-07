@@ -29,6 +29,8 @@ def main() -> None:
     p.add_argument("--num_samples", type=int, default=200)
     p.add_argument("--num_elites", type=int, default=20)
     p.add_argument("--num_iterations", type=int, default=4)
+    p.add_argument("--approach_weight", type=float, default=0.3,
+                   help="score shaping: weight on agent-behind-block term (0 disables)")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -45,7 +47,18 @@ def main() -> None:
     target = torch.from_numpy(np.asarray(env.target_pos)).float().to(device)
 
     def score_fn(pred_state: torch.Tensor) -> torch.Tensor:
-        return -torch.norm(pred_state[..., 4:6] - target, dim=-1)
+        agent = pred_state[..., 0:2]
+        block = pred_state[..., 4:6]
+        block_to_target = torch.norm(block - target, dim=-1)
+        if args.approach_weight <= 0:
+            return -block_to_target
+        # Encourage the agent to get *behind* the block relative to the target
+        # (the push point), so CEM has signal even before contact.
+        direction = target - block
+        direction = direction / (torch.norm(direction, dim=-1, keepdim=True) + 1e-6)
+        push_point = block - direction * 0.4
+        agent_to_push = torch.norm(agent - push_point, dim=-1)
+        return -block_to_target - args.approach_weight * agent_to_push
 
     planner = CEMPlanner(dynamics, action_dim=2, horizon=args.horizon,
                          num_samples=args.num_samples, num_elites=args.num_elites,
