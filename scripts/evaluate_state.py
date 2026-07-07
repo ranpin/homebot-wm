@@ -29,8 +29,10 @@ def main() -> None:
     p.add_argument("--num_samples", type=int, default=200)
     p.add_argument("--num_elites", type=int, default=20)
     p.add_argument("--num_iterations", type=int, default=4)
-    p.add_argument("--approach_weight", type=float, default=0.3,
+    p.add_argument("--approach_weight", type=float, default=0.0,
                    help="score shaping: weight on agent-behind-block term (0 disables)")
+    p.add_argument("--record_dir", type=str, default=None,
+                   help="if set, save a GIF of each successful episode here")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -64,10 +66,16 @@ def main() -> None:
                          num_samples=args.num_samples, num_elites=args.num_elites,
                          num_iterations=args.num_iterations)
 
+    record = args.record_dir is not None
+    if record:
+        from pathlib import Path
+        Path(args.record_dir).mkdir(parents=True, exist_ok=True)
+
     results = []
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=args.seed + ep)
         action_seq = None
+        frames = [obs["image"]] if record else None
         for step in range(args.max_steps):
             if step % args.replan_every == 0:
                 state = torch.from_numpy(obs["state"]).float().unsqueeze(0).to(device)
@@ -75,8 +83,16 @@ def main() -> None:
                     action_seq = planner.plan(state, score_fn)
             action = action_seq[step % len(action_seq)].cpu().numpy()
             obs, _, success, truncated, info = env.step(action)
+            if record:
+                frames.append(obs["image"])
             if success or truncated:
                 break
+        if record and success:
+            from PIL import Image
+            imgs = [Image.fromarray(fr).resize((336, 336), Image.NEAREST) for fr in frames]
+            gif_path = f"{args.record_dir}/success_ep{ep+1:02d}.gif"
+            imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=40, loop=0)
+            print(f"    saved demo -> {gif_path}")
         results.append({"success": bool(success), "steps": step + 1, "dist": info["dist_to_target"]})
         print(f"  Episode {ep+1}/{args.episodes}: {'SUCCESS' if success else 'FAIL'} "
               f"(steps={step+1}, dist={info['dist_to_target']:.2f})")
