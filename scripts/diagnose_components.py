@@ -24,7 +24,7 @@ import argparse
 import torch
 import torch.nn as nn
 
-from wm_core.dynamics.diffusion_dynamics import DiffusionDynamics
+from wm_core.dynamics import build_dynamics
 from wm_core.encoder.resnet_encoder import ResNetEncoder
 from wm_sim.dataset import TrajectoryDataset
 
@@ -70,11 +70,7 @@ def main() -> None:
     ckpt = torch.load(args.checkpoint, map_location=device)
     config = ckpt["config"]
     encoder = ResNetEncoder(adapter_dim=config["adapter_dim"], output_dim=config["latent_dim"]).to(device)
-    dynamics = DiffusionDynamics(
-        latent_dim=config["latent_dim"], action_dim=2,
-        hidden_dim=config["hidden_dim"], num_layers=config["num_layers"],
-        num_diffusion_steps=config["diffusion_steps"],
-    ).to(device)
+    dynamics = build_dynamics(config).to(device)
     encoder.load_state_dict(ckpt["encoder_state"])
     dynamics.load_state_dict(ckpt["dynamics_state"])
     encoder.eval()

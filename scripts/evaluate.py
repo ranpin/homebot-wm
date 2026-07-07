@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from wm_core.dynamics.diffusion_dynamics import DiffusionDynamics
+from wm_core.dynamics import build_dynamics
 from wm_core.encoder.resnet_encoder import ResNetEncoder
 from wm_core.planner.cem_planner import CEMPlanner
 from wm_sim.env import HomeTabletopEnv
@@ -44,13 +44,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> tuple:
         output_dim=config["latent_dim"],
     ).to(device)
 
-    dynamics = DiffusionDynamics(
-        latent_dim=config["latent_dim"],
-        action_dim=2,
-        hidden_dim=config["hidden_dim"],
-        num_layers=config["num_layers"],
-        num_diffusion_steps=config["diffusion_steps"],
-    ).to(device)
+    dynamics = build_dynamics(config).to(device)
 
     encoder.load_state_dict(ckpt["encoder_state"])
     dynamics.load_state_dict(ckpt["dynamics_state"])
