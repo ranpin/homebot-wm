@@ -100,30 +100,49 @@ class DiffusionDynamics(nn.Module):
 
     @torch.no_grad()
     def predict_next(self, latent: torch.Tensor, action: torch.Tensor, num_steps: int | None = None) -> torch.Tensor:
-        """Sample next latent via DDPM reverse process."""
-        steps = num_steps or self.num_diffusion_steps
+        """Sample next latent from the DDPM reverse process.
+
+        With ``num_steps`` unset (or >= the model's step count) this runs the
+        full stochastic DDPM reverse chain from t=T-1 down to t=0. With a smaller
+        ``num_steps`` it runs deterministic DDIM sampling over an evenly spaced
+        subsequence of timesteps that still terminates at t=0 — fewer, larger
+        steps rather than a truncated (and therefore still-noisy) chain.
+        """
         device = latent.device
         batch_size = latent.shape[0]
-
-        x = torch.randn(batch_size, self.latent_dim, device=device)
+        T = self.num_diffusion_steps
         cond_base = torch.cat([latent, action], dim=-1)
+        x = torch.randn(batch_size, self.latent_dim, device=device)
 
-        start = max(0, self.num_diffusion_steps - steps)
-        for i in reversed(range(start, self.num_diffusion_steps)):
+        def eps_at(x_t: torch.Tensor, i: int) -> torch.Tensor:
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            cond = torch.cat([cond_base, x], dim=-1)
+            cond = torch.cat([cond_base, x_t], dim=-1)
             h = self.cond_proj(cond) + self.time_embed(t)
             h = self.backbone(h)
-            pred_noise = self.head(h)
+            return self.head(h)
 
-            alpha_t = self.alpha[i]
+        if num_steps is None or num_steps >= T:
+            # Full stochastic DDPM reverse process.
+            for i in reversed(range(T)):
+                pred_noise = eps_at(x, i)
+                alpha_t = self.alpha[i]
+                alpha_bar_t = self.alpha_bar[i]
+                beta_t = self.beta[i]
+                x = (x - beta_t / (1.0 - alpha_bar_t).sqrt() * pred_noise) / alpha_t.sqrt()
+                if i > 0:
+                    x = x + beta_t.sqrt() * torch.randn_like(x)
+            return x
+
+        # Respaced deterministic DDIM sampling (eta=0) over a subsequence ending at t=0.
+        seq = torch.linspace(T - 1, 0, max(1, num_steps)).round().long().tolist()
+        for idx, i in enumerate(seq):
+            pred_noise = eps_at(x, i)
             alpha_bar_t = self.alpha_bar[i]
-            beta_t = self.beta[i]
-
-            x = (x - beta_t / (1.0 - alpha_bar_t).sqrt() * pred_noise) / alpha_t.sqrt()
-
-            if i > 0:
-                noise = torch.randn_like(x)
-                x += (beta_t.sqrt()) * noise
-
+            x0 = (x - (1.0 - alpha_bar_t).sqrt() * pred_noise) / alpha_bar_t.sqrt()
+            i_prev = seq[idx + 1] if idx + 1 < len(seq) else -1
+            if i_prev < 0:
+                x = x0
+            else:
+                alpha_bar_prev = self.alpha_bar[i_prev]
+                x = alpha_bar_prev.sqrt() * x0 + (1.0 - alpha_bar_prev).sqrt() * pred_noise
         return x
