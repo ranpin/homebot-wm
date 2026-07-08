@@ -63,30 +63,29 @@ class ScriptedExpert:
         push_dir = to_target / max(dist_to_target, 1e-6)
         tangent = np.array([-push_dir[1], push_dir[0]], dtype=np.float32)
 
-        # Agent position relative to the block, decomposed along / perpendicular
-        # to the push direction. `along < 0` means the agent is behind the block.
+        # Agent relative to the block, decomposed along / perpendicular to the
+        # push direction. `along < 0` means the agent is behind the block.
         to_agent = agent_pos - block_pos
         along = float(np.dot(to_agent, push_dir))
         lateral_vec = to_agent - along * push_dir
         lateral_err = float(np.linalg.norm(lateral_vec))
 
-        speed = min(1.0, dist_to_target / 1.5)
+        push_point = block_pos - push_dir * self.contact_offset
+        to_point = push_point - agent_pos
+        d_point = float(np.linalg.norm(to_point))
 
-        if along < -0.12 and lateral_err < 0.22:
-            # Behind and aligned -> push through the block center toward target.
-            desired = speed * push_dir
-        else:
-            # Reposition to the push point behind the block.
-            push_point = block_pos - push_dir * self.contact_offset
-            to_point = push_point - agent_pos
-            d = float(np.linalg.norm(to_point))
-            desired = (to_point / max(d, 1e-6))
-            if along > -0.12:
-                # Agent is level with / in front of the block: swing around it
-                # on the shorter side instead of shoving through it.
-                side = -1.0 if float(np.dot(lateral_vec, tangent)) >= 0 else 1.0
-                desired = desired + 0.8 * side * tangent
+        if along < -0.05 and lateral_err < 0.12 and d_point < 0.18:
+            # In position behind the block and aligned -> push toward the target.
+            desired = push_dir
+        elif along > -0.05:
+            # Agent is level with / in front of the block: swing around it on the
+            # shorter side rather than shoving it sideways.
+            side = -1.0 if float(np.dot(lateral_vec, tangent)) >= 0 else 1.0
+            desired = 0.6 * (to_point / max(d_point, 1e-6)) + 1.0 * side * tangent
             desired = desired / max(float(np.linalg.norm(desired)), 1e-6)
+        else:
+            # Behind but not yet aligned/close -> ease into the push point.
+            desired = (to_point / max(d_point, 1e-6)) * min(1.0, d_point / 0.3)
 
         desired = desired + self._obstacle_avoidance(agent_pos)
         return np.clip(desired, -1.0, 1.0).astype(np.float32)
