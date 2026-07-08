@@ -122,6 +122,36 @@ Planner (predicted_states, goal) → optimal_action
 Robot Controller → execute action
 ```
 
+## Phase 1 Results (push-block MVP)
+
+Closed-loop success on the push-block task, comparing dynamics backends (CEM planner,
+frozen encoder where applicable). Acceptance gate: dynamics rollout must beat the
+identity "no-move" baseline **and** produce a usable planning signal.
+
+| Approach | 1-step rollout vs identity | Closed-loop success |
+|----------|----------------------------|---------------------|
+| Diffusion latent dynamics | worse (0.051 vs 0.005) | 0% |
+| Residual-MLP latent dynamics | ~tie (0.0051 vs 0.0053) | 0% |
+| **Residual-MLP state-space dynamics** | **beats (0.0004 vs 0.0016)** | **~17–20%** ✅ |
+
+Key findings:
+- The original eval fed `[0,255]` images to an encoder trained on `[0,1]` — a
+  normalization mismatch that alone forced 0% (decoder error 96 vs 0.35). Fixed.
+- **Vision-latent 1-step dynamics carries too little action signal**: in most
+  transitions the block is static (the agent is still navigating), so "no move"
+  is near-optimal and the action barely matters at 1 step → CEM cannot plan.
+- **State-space world model works**: a residual MLP over the 6-D true state
+  `[agent_xy, agent_vxy, block_xy]` learns real push dynamics (block-position
+  prediction 0.007 vs 0.019 identity); CEM then plans successful pushes at
+  roughly the level of the scripted expert that generated the data (~18%).
+- Success is currently **capped near the 18% expert level** — raising it needs
+  better data (success-weighted resampling or an improved expert), not more CEM
+  tuning. The vision-latent world model remains the harder research track.
+
+**Demo**: `python scripts/evaluate_state.py --checkpoint checkpoints/state_dynamics.pt --record_dir demo`
+saves a GIF of each successful episode (overhead view: red agent pushes the blue
+block into the green target zone, avoiding brown obstacles).
+
 ## Design Principles
 
 1. **Simulation-first**: All development and validation starts in MuJoCo (CPU) before real hardware.

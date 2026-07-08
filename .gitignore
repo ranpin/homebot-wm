@@ -58,3 +58,6 @@ Thumbs.db
 *.o
 *.so
 *.dylib
+
+# Demo artifacts (regenerate via evaluate_state.py --record_dir)
+demo/
