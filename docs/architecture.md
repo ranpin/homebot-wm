@@ -132,7 +132,7 @@ identity "no-move" baseline **and** produce a usable planning signal.
 |----------|----------------------------|---------------------|
 | Diffusion latent dynamics | worse (0.051 vs 0.005) | 0% |
 | Residual-MLP latent dynamics | ~tie (0.0051 vs 0.0053) | 0% |
-| **Residual-MLP state-space dynamics** | **beats (0.0004 vs 0.0016)** | **~17–20%** ✅ |
+| **Residual-MLP state-space dynamics** | **beats (0.0004 vs 0.0016)** | **~17.5%** ✅ (stable, 40 ep) |
 
 Key findings:
 - The original eval fed `[0,255]` images to an encoder trained on `[0,1]` — a
@@ -144,9 +144,15 @@ Key findings:
   `[agent_xy, agent_vxy, block_xy]` learns real push dynamics (block-position
   prediction 0.007 vs 0.019 identity); CEM then plans successful pushes at
   roughly the level of the scripted expert that generated the data (~18%).
-- Success is currently **capped near the 18% expert level** — raising it needs
-  better data (success-weighted resampling or an improved expert), not more CEM
-  tuning. The vision-latent world model remains the harder research track.
+- Success is currently **~17–18% (stable over 40 episodes), i.e. expert level**.
+- **CEM tuning is exhausted**: a short horizon (10) with terminal cost is best;
+  longer horizons, more samples, or accumulated running cost all made it *worse*
+  (5–8%). This is **model exploitation** — rolling the imperfect 1-step model
+  out far and optimizing hard, CEM finds action sequences that look good to the
+  model but fail in reality. Raising success now needs a model that is
+  trustworthy under long rollouts (multi-step or uncertainty/ensemble-penalized
+  dynamics) and/or better data — not more planning. The vision-latent world
+  model remains the harder research track.
 
 **Demo**: `python scripts/evaluate_state.py --checkpoint checkpoints/state_dynamics.pt --record_dir demo`
 saves a GIF of each successful episode (overhead view: red agent pushes the blue

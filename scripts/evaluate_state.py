@@ -25,11 +25,11 @@ def main() -> None:
     p.add_argument("--episodes", type=int, default=20)
     p.add_argument("--max_steps", type=int, default=150)
     p.add_argument("--replan_every", type=int, default=3)
-    p.add_argument("--horizon", type=int, default=20)
+    p.add_argument("--horizon", type=int, default=10)
     p.add_argument("--num_samples", type=int, default=200)
     p.add_argument("--num_elites", type=int, default=20)
     p.add_argument("--num_iterations", type=int, default=4)
-    p.add_argument("--running", type=int, default=1, help="1=accumulated running cost, 0=terminal only")
+    p.add_argument("--running", type=int, default=0, help="1=accumulated running cost, 0=terminal only")
     p.add_argument("--approach_weight", type=float, default=0.0,
                    help="score shaping: weight on agent-behind-block term (0 disables)")
     p.add_argument("--record_dir", type=str, default=None,
