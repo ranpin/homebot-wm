@@ -48,15 +48,20 @@ class CEMPlanner:
         latent: torch.Tensor,
         score_fn,
         num_steps: int | None = None,
+        running: bool = False,
     ) -> torch.Tensor:
         """Plan an action sequence starting from latent state.
 
         Args:
             latent: Current latent state (1, latent_dim).
-            score_fn: Callable(next_latent) -> scalar score. Higher is better.
+            score_fn: Callable(next_latent) -> per-sample score. Higher is better.
             num_steps: Optional reduced number of diffusion steps for the
                 dynamics rollout (fewer = faster planning). Defaults to the
                 model's full step count.
+            running: If True, score each candidate by the sum of ``score_fn``
+                over every rolled-out step (a running/accumulated cost) instead
+                of only the terminal state. Denser signal — rewards sequences
+                that make progress throughout, not just at the horizon.
 
         Returns:
             Best action sequence (horizon, action_dim).
@@ -72,9 +77,13 @@ class CEMPlanner:
 
             # Roll all candidate sequences through the dynamics in a single batch.
             state = latent.expand(self.num_samples, -1).contiguous()
+            scores = torch.zeros(self.num_samples, device=device)
             for t in range(self.horizon):
                 state = self.dynamics.predict_next(state, actions[:, t], num_steps=num_steps)
-            scores = score_fn(state)  # (num_samples,)
+                if running:
+                    scores = scores + score_fn(state)
+            if not running:
+                scores = score_fn(state)  # (num_samples,)
 
             elite_idx = scores.topk(self.num_elites).indices
             elite_actions = actions[elite_idx]
