@@ -176,9 +176,12 @@ def main():
 
     check_data_distribution(dataset)
 
-    encoder = ResNetEncoder(adapter_dim=64, output_dim=64).to(device)
+    # Spatial encoder (the current default): size the dynamics off the encoder
+    # so the two cannot silently disagree about the latent width.
+    encoder = ResNetEncoder(adapter_dim=64, output_dim=16).to(device)
+    print(f"Encoder: spatial={encoder.spatial} latent_dim={encoder.latent_dim}")
     dynamics = DiffusionDynamics(
-        latent_dim=64, action_dim=2, hidden_dim=128,
+        latent_dim=encoder.latent_dim, action_dim=2, hidden_dim=128,
         num_layers=3, num_diffusion_steps=50,
     ).to(device)
     encoder.train()

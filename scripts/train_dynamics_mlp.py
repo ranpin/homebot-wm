@@ -94,20 +94,23 @@ def main() -> None:
     # Encoder config + weights (needed in the output checkpoint for eval/diagnose).
     enc_ckpt = torch.load(args.encoder_ckpt, map_location="cpu")
     enc_config = enc_ckpt["config"]
-    latent_dim = enc_config["latent_dim"]
 
     use_cache = args.latent_cache is not None
     encoder = None
     if use_cache:
         cache = torch.load(args.latent_cache, map_location="cpu")
+        # Trust the cache's own width: for a spatial encoder the flat latent dim
+        # is out_channels*grid*grid, not enc_config["latent_dim"].
+        latent_dim = int(cache["latent"].shape[1])
         full = TensorDataset(cache["latent"], cache["action"], cache["next_latent"])
-        print(f"Loaded latent cache: {cache['latent'].shape[0]} transitions (dim={cache['latent'].shape[1]})")
+        print(f"Loaded latent cache: {cache['latent'].shape[0]} transitions (dim={latent_dim})")
     else:
-        encoder = ResNetEncoder(adapter_dim=enc_config["adapter_dim"], output_dim=latent_dim).to(device)
+        encoder = ResNetEncoder.from_config(enc_config).to(device)
         encoder.load_state_dict(enc_ckpt["encoder_state"])
         encoder.eval()
         for p in encoder.parameters():
             p.requires_grad = False
+        latent_dim = encoder.latent_dim
         full = TrajectoryDataset(args.data)
         print(f"Image path (slow): {len(full)} transitions")
 
@@ -129,6 +132,10 @@ def main() -> None:
     save_dir.mkdir(parents=True, exist_ok=True)
     out_config = {
         "adapter_dim": enc_config["adapter_dim"], "latent_dim": latent_dim,
+        # Propagate the encoder shape so eval/diagnose can rebuild it.
+        "spatial": enc_config.get("spatial", False),
+        "spatial_out_channels": enc_config.get("spatial_out_channels", 16),
+        "image_size": enc_config.get("image_size", 84),
         "hidden_dim": args.hidden_dim, "num_layers": args.num_layers,
         "action_dim": 2, "diffusion_steps": enc_config.get("diffusion_steps", 50),
         "dynamics_type": "mlp",
