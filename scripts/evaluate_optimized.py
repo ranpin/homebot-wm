@@ -5,6 +5,7 @@ enabling effective CEM planning.
 """
 
 import argparse
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -39,10 +40,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> tuple:
     ckpt = torch.load(checkpoint_path, map_location=device)
     config = ckpt["config"]
 
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"],
-        output_dim=config["latent_dim"],
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
 
     dynamics = build_dynamics(config).to(device)
 
@@ -74,16 +72,24 @@ def evaluate_episode(
     max_steps: int = 200,
     diffusion_steps: int = 10,  # Reduced for faster planning
     render: bool = False,
+    obs_horizon: int = 1,
 ) -> dict:
     """Run one evaluation episode with closed-loop planning."""
     obs, info = env.reset()
 
     frames = []
     plan_idx = 0
+    history = deque(maxlen=obs_horizon)
 
     for step in range(max_steps):
         # Match training normalization (TrajectoryDataset divides images by 255).
-        image = torch.from_numpy(obs["image"]).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
+        frame = torch.from_numpy(obs["image"]).permute(2, 0, 1).float() / 255.0
+        history.append(frame)
+        # Pad the window at episode start by repeating the oldest frame, mirroring
+        # TrajectoryDataset._load_window's clamp-at-0 behaviour.
+        while len(history) < obs_horizon:
+            history.appendleft(history[0])
+        image = torch.cat(list(history), dim=0).unsqueeze(0).to(device)  # (1, k*3, H, W)
 
         with torch.no_grad():
             latent = encoder(image)
@@ -137,6 +143,10 @@ def main():
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--max_steps", type=int, default=100)
     parser.add_argument("--diffusion_steps", type=int, default=10, help="Reduced steps for faster planning")
+    parser.add_argument("--horizon", type=int, default=5, help="CEM planning horizon")
+    parser.add_argument("--num_samples", type=int, default=50, help="CEM candidate sequences")
+    parser.add_argument("--num_elites", type=int, default=10, help="CEM elites kept per iteration")
+    parser.add_argument("--num_iterations", type=int, default=3, help="CEM refinement iterations")
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -148,7 +158,7 @@ def main():
     encoder, dynamics, config = load_model(args.checkpoint, device)
 
     print(f"Loading block decoder from {args.block_decoder}")
-    block_decoder = load_block_decoder(args.block_decoder, config["latent_dim"], device)
+    block_decoder = load_block_decoder(args.block_decoder, encoder.latent_dim, device)
 
     env = HomeTabletopEnv()
     target_pos = env.target_pos
@@ -157,10 +167,10 @@ def main():
     planner = CEMPlanner(
         dynamics,
         action_dim=2,
-        horizon=5,
-        num_samples=50,
-        num_elites=10,
-        num_iterations=3
+        horizon=args.horizon,
+        num_samples=args.num_samples,
+        num_elites=args.num_elites,
+        num_iterations=args.num_iterations
     )
 
     np.random.seed(args.seed)
@@ -176,6 +186,7 @@ def main():
             env, encoder, dynamics, block_decoder, planner, device,
             target_pos, max_steps=args.max_steps,
             diffusion_steps=args.diffusion_steps, render=args.render,
+            obs_horizon=encoder.obs_horizon,
         )
         results.append(result)
 

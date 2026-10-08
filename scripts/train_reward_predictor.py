@@ -68,10 +68,7 @@ def main():
     # Load frozen encoder
     encoder_ckpt = torch.load(args.encoder_ckpt, map_location=device)
     config = encoder_ckpt["config"]
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"],
-        output_dim=config["latent_dim"],
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
     encoder.load_state_dict(encoder_ckpt["encoder_state"])
     encoder.eval()
 
@@ -80,7 +77,7 @@ def main():
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
     # Train reward predictor
-    reward_pred = RewardPredictor(latent_dim=config["latent_dim"]).to(device)
+    reward_pred = RewardPredictor(latent_dim=encoder.latent_dim).to(device)
     optimizer = torch.optim.Adam(reward_pred.parameters(), lr=args.lr)
     criterion = nn.MSELoss()
 

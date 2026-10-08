@@ -11,6 +11,14 @@ MuJoCo eval:
   4. End-to-end planning-signal error: block position decoded from the model's
      predicted next latent vs the true next block position. This is exactly the
      signal CEM optimizes.
+  5. Model Laziness Rate — how often the model just predicts "no change".
+     Beating identity on MSE (check 3) is necessary but not sufficient: a model
+     can shrink every delta toward zero and still win on MSE while carrying no
+     planning signal.
+  6. Action sensitivity — does changing the action change the prediction? This
+     is the gate that actually decides whether CEM can plan. Compared against
+     the sampling-noise floor so a stochastic (diffusion) model's own variance
+     is not mistaken for an action effect.
 
 Usage:
     python scripts/diagnose_components.py \
@@ -59,6 +67,12 @@ def main() -> None:
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--rollout_steps", type=int, default=None,
                         help="Diffusion steps for predict_next (default: model full steps)")
+    parser.add_argument("--lazy_tau", type=float, default=0.5,
+                        help="A sample counts as lazy when ||pred_delta|| < tau * ||true_delta||")
+    parser.add_argument("--action_samples", type=int, default=16,
+                        help="Random actions per state for the action-sensitivity test")
+    parser.add_argument("--action_batch", type=int, default=64,
+                        help="States used for the action-sensitivity test")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -69,18 +83,22 @@ def main() -> None:
 
     ckpt = torch.load(args.checkpoint, map_location=device)
     config = ckpt["config"]
-    encoder = ResNetEncoder(adapter_dim=config["adapter_dim"], output_dim=config["latent_dim"]).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
     dynamics = build_dynamics(config).to(device)
     encoder.load_state_dict(ckpt["encoder_state"])
     dynamics.load_state_dict(ckpt["dynamics_state"])
     encoder.eval()
     dynamics.eval()
 
-    decoder = BlockPositionDecoder(latent_dim=config["latent_dim"]).to(device)
+    latent_dim = encoder.latent_dim
+    action_dim = config.get("action_dim", 2)
+    print(f"Encoder: spatial={encoder.spatial} latent_dim={latent_dim}")
+
+    decoder = BlockPositionDecoder(latent_dim=latent_dim).to(device)
     decoder.load_state_dict(torch.load(args.block_decoder, map_location=device))
     decoder.eval()
 
-    dataset = TrajectoryDataset(args.data)
+    dataset = TrajectoryDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     n = min(args.n, len(dataset))
     idxs = torch.randperm(len(dataset))[:n].tolist()
     print(f"Dataset: {len(dataset)} transitions; evaluating {n}\n")
@@ -88,6 +106,8 @@ def main() -> None:
     dec_err_ok, dec_err_bad = [], []
     roll_mse_model, roll_mse_identity = [], []
     plan_err_model, plan_err_static = [], []
+    lazy_flags, true_delta_norm, pred_delta_norm = [], [], []
+    all_latents = []
 
     with torch.no_grad():
         for start in range(0, n, args.batch_size):
@@ -116,6 +136,15 @@ def main() -> None:
             plan_err_model.append(euclidean(decoder(pred_latent), next_block_pos))
             plan_err_static.append(euclidean(decoder(latent), next_block_pos))
 
+            # (5) Model laziness: is the predicted delta collapsed toward zero?
+            td = torch.norm(next_latent - latent, dim=-1)
+            pd = torch.norm(pred_latent - latent, dim=-1)
+            true_delta_norm.append(td)
+            pred_delta_norm.append(pd)
+            lazy_flags.append((pd < args.lazy_tau * td).float())
+
+            all_latents.append(latent)
+
     def stat(chunks):
         v = torch.cat(chunks)
         return v.mean().item(), v.std().item()
@@ -133,6 +162,51 @@ def main() -> None:
     print("=== (4) End-to-end planning signal (decoded predicted-next block pos vs truth) ===")
     m, s = stat(plan_err_model); print(f"  model rollout+decode err: {m:.3f} +/- {s:.3f}")
     m, s = stat(plan_err_static); print(f"  static (decode current) : {m:.3f}")
+
+    print(f"=== (5) Model Laziness Rate (||pred_delta|| < {args.lazy_tau} * ||true_delta||) ===")
+    mlr, _ = stat(lazy_flags)
+    tdn, _ = stat(true_delta_norm); pdn, _ = stat(pred_delta_norm)
+    print(f"  mean ||true_delta|| : {tdn:.5f}")
+    print(f"  mean ||pred_delta|| : {pdn:.5f}   (ratio {pdn / max(tdn, 1e-12):.3f})")
+    print(f"  Model Laziness Rate : {mlr:.1%}")
+    print(f"  -> {'LAZY: model mostly predicts no change' if mlr > 0.5 else 'not predominantly lazy'}")
+
+    # (6) Action sensitivity: vary the action at a FIXED state and measure how
+    # much the prediction moves. Compared against the sampling-noise floor
+    # (repeated predictions with the SAME action) so a diffusion model's own
+    # stochasticity is not mistaken for an action effect.
+    print(f"=== (6) Action sensitivity ({args.action_samples} random actions x "
+          f"{min(args.action_batch, n)} states) ===")
+    with torch.no_grad():
+        sens_latent = torch.cat(all_latents)[:args.action_batch]
+        b = sens_latent.shape[0]
+        gen = torch.Generator(device=device).manual_seed(args.seed)
+        acts = torch.rand(args.action_samples, b, action_dim, generator=gen, device=device) * 2 - 1
+
+        preds = torch.stack([
+            dynamics.predict_next(sens_latent, acts[a], num_steps=args.rollout_steps)
+            for a in range(args.action_samples)
+        ])
+        across_action = preds.std(dim=0).mean().item()
+
+        fixed = acts[0]
+        reps = torch.stack([
+            dynamics.predict_next(sens_latent, fixed, num_steps=args.rollout_steps)
+            for _ in range(args.action_samples)
+        ])
+        noise_floor = reps.std(dim=0).mean().item()
+
+    print(f"  std across DIFFERENT actions : {across_action:.6f}")
+    print(f"  std across SAME action (noise floor) : {noise_floor:.6f}")
+    print(f"  action effect / true delta magnitude : {across_action / max(tdn, 1e-12):.3f}")
+    if across_action <= noise_floor * 1.05:
+        print("  -> FAIL: action contributes nothing beyond sampling noise. "
+              "CEM has no gradient to optimize — planning cannot work.")
+    elif across_action < 0.1 * tdn:
+        print("  -> WEAK: action effect is <10% of the true frame-to-frame change. "
+              "CEM will be dominated by model error.")
+    else:
+        print("  -> OK: the action measurably changes the prediction.")
 
 
 if __name__ == "__main__":
