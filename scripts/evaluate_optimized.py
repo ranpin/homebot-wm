@@ -134,6 +134,10 @@ def main():
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--max_steps", type=int, default=100)
     parser.add_argument("--diffusion_steps", type=int, default=10, help="Reduced steps for faster planning")
+    parser.add_argument("--horizon", type=int, default=5, help="CEM planning horizon")
+    parser.add_argument("--num_samples", type=int, default=50, help="CEM candidate sequences")
+    parser.add_argument("--num_elites", type=int, default=10, help="CEM elites kept per iteration")
+    parser.add_argument("--num_iterations", type=int, default=3, help="CEM refinement iterations")
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -154,10 +158,10 @@ def main():
     planner = CEMPlanner(
         dynamics,
         action_dim=2,
-        horizon=5,
-        num_samples=50,
-        num_elites=10,
-        num_iterations=3
+        horizon=args.horizon,
+        num_samples=args.num_samples,
+        num_elites=args.num_elites,
+        num_iterations=args.num_iterations
     )
 
     np.random.seed(args.seed)
