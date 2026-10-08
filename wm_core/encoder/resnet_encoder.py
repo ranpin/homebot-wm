@@ -37,9 +37,11 @@ class ResNetEncoder(nn.Module):
         pretrained: bool = True,
         spatial: bool = True,
         image_size: int = 84,
+        obs_horizon: int = 1,
     ):
         super().__init__()
         self.spatial = spatial
+        self.obs_horizon = obs_horizon
         weights = models.ResNet18_Weights.DEFAULT if pretrained else None
         resnet = models.resnet18(weights=weights)
 
@@ -63,7 +65,7 @@ class ResNetEncoder(nn.Module):
                 nn.GELU(),
                 nn.Conv2d(adapter_dim, output_dim, kernel_size=1),
             )
-            self.latent_dim = output_dim * self._grid * self._grid
+            self._frame_dim = output_dim * self._grid * self._grid
         else:
             self._grid = 1
             self.adapter = nn.Sequential(
@@ -71,7 +73,10 @@ class ResNetEncoder(nn.Module):
                 nn.GELU(),
                 nn.Linear(adapter_dim, output_dim),
             )
-            self.latent_dim = output_dim
+            self._frame_dim = output_dim
+        # k stacked frames are encoded independently and concatenated, so the
+        # latent carries motion (velocity) -- a single frame cannot.
+        self.latent_dim = self._frame_dim * obs_horizon
 
     @classmethod
     def from_config(cls, config: dict) -> "ResNetEncoder":
@@ -80,16 +85,20 @@ class ResNetEncoder(nn.Module):
         Old checkpoints lack the ``spatial`` key and load via the pooled path.
         """
         spatial = bool(config.get("spatial", False))
+        obs_horizon = int(config.get("obs_horizon", 1))
         if spatial:
             output_dim = config.get("spatial_out_channels", 16)
         else:
-            output_dim = config["latent_dim"]
+            # Legacy pooled: the stored latent_dim is the TOTAL, so divide the
+            # horizon back out to recover the per-frame width.
+            output_dim = config["latent_dim"] // obs_horizon
         return cls(
             adapter_dim=config["adapter_dim"],
             output_dim=output_dim,
             pretrained=config.get("pretrained", True),
             spatial=spatial,
             image_size=config.get("image_size", 84),
+            obs_horizon=obs_horizon,
         )
 
     def train(self, mode: bool = True) -> "ResNetEncoder":
@@ -103,7 +112,16 @@ class ResNetEncoder(nn.Module):
         return self.backbone(image)
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
+        b = image.shape[0]
+        if self.obs_horizon > 1:
+            # (B, k*3, H, W): encode each frame with the frozen 3-channel
+            # backbone, then concatenate -- keeps the ImageNet conv1 intact.
+            image = image.reshape(b * self.obs_horizon, 3, *image.shape[-2:])
         features = self._extract_features(image)
         if self.spatial:
-            return self.adapter(features).flatten(1)  # (B, out_channels*grid*grid)
-        return self.adapter(features.flatten(1))
+            lat = self.adapter(features).flatten(1)   # (B*k, C*grid*grid)
+        else:
+            lat = self.adapter(features.flatten(1))   # (B*k, C)
+        if self.obs_horizon > 1:
+            lat = lat.reshape(b, -1)                  # (B, k*frame_dim)
+        return lat

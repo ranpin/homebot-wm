@@ -46,7 +46,9 @@ def main() -> None:
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.eval()
 
-    dataset = TrajectoryDataset(args.data)
+    # obs_horizon comes from the encoder config so the dataset window and the
+    # encoder's expected channel count can never disagree.
+    dataset = TrajectoryDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=True,

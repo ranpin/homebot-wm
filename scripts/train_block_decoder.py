@@ -36,8 +36,8 @@ class BlockPositionDecoder(nn.Module):
 class BlockPositionDataset(Dataset):
     """Wrap TrajectoryDataset to provide (image, block_position) pairs."""
 
-    def __init__(self, traj_path: str):
-        self.traj_ds = TrajectoryDataset(traj_path)
+    def __init__(self, traj_path: str, obs_horizon: int = 1):
+        self.traj_ds = TrajectoryDataset(traj_path, obs_horizon=obs_horizon)
 
     def __len__(self):
         return len(self.traj_ds)
@@ -71,7 +71,7 @@ def main():
     encoder.eval()
 
     # Load dataset
-    dataset = BlockPositionDataset(args.data)
+    dataset = BlockPositionDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
     # Train decoder

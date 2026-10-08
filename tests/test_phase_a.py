@@ -113,7 +113,9 @@ def test_dataset_obs_horizon(synthetic_h5):
     ds = TrajectoryDataset(synthetic_h5, obs_horizon=3)
     s = ds[0]
     assert tuple(s["image"].shape) == (9, IMG, IMG)
-    assert tuple(s["next_image"].shape) == (3, IMG, IMG)
+    # next_image is also a k-frame window (slid forward one step) so that latent
+    # and next_latent share a width -- the dynamics model needs matching dims.
+    assert tuple(s["next_image"].shape) == (9, IMG, IMG)
 
 
 def test_contact_weights_mix(synthetic_h5):
@@ -159,4 +161,51 @@ def test_contact_sampler_actually_oversamples(synthetic_h5):
     assert empirical > base + 0.15, f"no real shift: {empirical:.3f} vs base {base:.3f}"
     assert abs(empirical - expected) < 0.08, (
         f"empirical {empirical:.3f} != analytic {expected:.3f}")
+
+
+# ------------------------------------------------- A2b: obs_horizon (temporal)
+def test_obs_horizon_encoder_shapes():
+    enc = ResNetEncoder(adapter_dim=32, output_dim=16, pretrained=False, spatial=True,
+                        image_size=IMG, obs_horizon=2)
+    assert enc.latent_dim == 16 * 3 * 3 * 2
+    out = enc(torch.rand(2, 6, IMG, IMG))   # 2 frames x 3 channels
+    assert tuple(out.shape) == (2, 288)
+
+
+def test_obs_horizon_from_config_roundtrip():
+    cfg = {"adapter_dim": 32, "spatial": True, "spatial_out_channels": 16,
+           "image_size": IMG, "latent_dim": 288, "obs_horizon": 2, "pretrained": False}
+    enc = ResNetEncoder.from_config(cfg)
+    assert enc.obs_horizon == 2 and enc.latent_dim == 288
+    # a checkpoint with no obs_horizon key must default to 1 (back-compat)
+    old = {"adapter_dim": 32, "spatial": True, "spatial_out_channels": 16,
+           "image_size": IMG, "latent_dim": 144, "pretrained": False}
+    enc_old = ResNetEncoder.from_config(old)
+    assert enc_old.obs_horizon == 1 and enc_old.latent_dim == 144
+
+
+def test_dataset_obs_horizon_window_is_shifted_by_one(synthetic_h5):
+    """next_image must be the image window slid forward one frame, not a single frame."""
+    ds = TrajectoryDataset(synthetic_h5, obs_horizon=3)
+    s = ds[5]                                  # episode 0, t=5 -> no start clamping
+    assert tuple(s["image"].shape) == (9, IMG, IMG)
+    assert tuple(s["next_image"].shape) == (9, IMG, IMG)
+    # image = frames [t-2,t-1,t]; next_image = [t-1,t,t+1]
+    # => next_image's first two frames are image's last two frames
+    assert torch.equal(s["next_image"][:6], s["image"][3:9])
+    # and the newest frame actually differs (the scene moved)
+    assert not torch.equal(s["next_image"][6:9], s["image"][6:9])
+
+
+def test_encoder_accepts_dataset_window(synthetic_h5):
+    """End-to-end shape check: dataset window -> encoder -> latent of the right width."""
+    ds = TrajectoryDataset(synthetic_h5, obs_horizon=2)
+    enc = ResNetEncoder(adapter_dim=32, output_dim=16, pretrained=False, spatial=True,
+                        image_size=IMG, obs_horizon=2).eval()
+    s = ds[5]
+    with torch.no_grad():
+        z = enc(s["image"][None])
+        zn = enc(s["next_image"][None])
+    assert tuple(z.shape) == (1, enc.latent_dim)
+    assert tuple(zn.shape) == tuple(z.shape)   # dynamics needs matching widths
 

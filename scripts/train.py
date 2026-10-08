@@ -104,6 +104,9 @@ def main() -> None:
     parser.add_argument("--spatial_out_channels", type=int, default=16,
                         help="Per-cell channels of the spatial latent (flat dim = C*grid*grid).")
     parser.add_argument("--image_size", type=int, default=84)
+    parser.add_argument("--obs_horizon", type=int, default=1,
+                        help="Stack k frames into the observation so the latent carries "
+                             "velocity; a single frame cannot show a force's effect.")
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--num_layers", type=int, default=3)
     parser.add_argument("--diffusion_steps", type=int, default=50)
@@ -122,7 +125,7 @@ def main() -> None:
         print(f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
 
     print(f"Loading dataset: {args.data}")
-    dataset = TrajectoryDataset(args.data)
+    dataset = TrajectoryDataset(args.data, obs_horizon=args.obs_horizon)
     val_size = int(len(dataset) * args.val_split)
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(dataset, [train_size, val_size])
@@ -159,6 +162,7 @@ def main() -> None:
         output_dim=args.spatial_out_channels if args.spatial else args.latent_dim,
         spatial=args.spatial,
         image_size=args.image_size,
+        obs_horizon=args.obs_horizon,
     ).to(device)
     # For a spatial encoder the flat latent dim is out_channels*grid*grid, which
     # is what the dynamics model and every downstream consumer must be sized to.

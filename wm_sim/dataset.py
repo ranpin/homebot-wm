@@ -66,24 +66,30 @@ class TrajectoryDataset(Dataset):
     def _load_image(self, ep, t: int) -> torch.Tensor:
         return torch.from_numpy(ep["observations/images"][t]).permute(2, 0, 1).float() / 255.0
 
+    def _load_window(self, ep, t_end: int) -> torch.Tensor:
+        """Frames t_end-k+1 .. t_end stacked as (k*3, H, W), clamped at the start."""
+        frames = [ep["observations/images"][max(t_end - dt, 0)]
+                  for dt in range(self.obs_horizon - 1, -1, -1)]
+        stacked = torch.from_numpy(np.stack(frames)).permute(0, 3, 1, 2)
+        return stacked.reshape(-1, *stacked.shape[-2:]).float() / 255.0
+
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         ep_key, t = self._index[idx]
         f = self._open_file()
         ep = f[ep_key]
 
+        next_t = min(t + 1, ep["observations/images"].shape[0] - 1)
         if self.obs_horizon > 1:
-            frames = [ep["observations/images"][max(t - dt, 0)]
-                      for dt in range(self.obs_horizon - 1, -1, -1)]
-            stacked = torch.from_numpy(np.stack(frames)).permute(0, 3, 1, 2)
-            image = stacked.reshape(-1, *stacked.shape[-2:]).float() / 255.0
+            # Both ends are k-frame windows so latent and next_latent share a
+            # width; the pair is a sliding window shifted by one step.
+            image = self._load_window(ep, t)
+            next_image = self._load_window(ep, next_t)
         else:
             image = self._load_image(ep, t)
+            next_image = self._load_image(ep, next_t)
 
         state = torch.from_numpy(ep["observations/states"][t])
         action = torch.from_numpy(ep["actions"][t])
-
-        next_t = min(t + 1, ep["observations/images"].shape[0] - 1)
-        next_image = self._load_image(ep, next_t)
         next_state = torch.from_numpy(ep["observations/states"][next_t])
 
         contact = bool(torch.norm(next_state[4:6] - state[4:6]) > self.contact_eps)

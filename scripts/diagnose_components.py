@@ -98,7 +98,7 @@ def main() -> None:
     decoder.load_state_dict(torch.load(args.block_decoder, map_location=device))
     decoder.eval()
 
-    dataset = TrajectoryDataset(args.data)
+    dataset = TrajectoryDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     n = min(args.n, len(dataset))
     idxs = torch.randperm(len(dataset))[:n].tolist()
     print(f"Dataset: {len(dataset)} transitions; evaluating {n}\n")
