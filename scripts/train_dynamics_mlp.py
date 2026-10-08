@@ -22,10 +22,11 @@ Usage (fast path):
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler, random_split
 from tqdm import tqdm
 
 from wm_core.dynamics.mlp_dynamics import MLPDynamics
@@ -77,6 +78,11 @@ def main() -> None:
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--val_split", type=float, default=0.1)
+    parser.add_argument("--contact_weighting", action="store_true",
+                        help="Upweight contact transitions (block actually moved) via a "
+                             "WeightedRandomSampler. Off by default so runs stay comparable.")
+    parser.add_argument("--contact_boost", type=float, default=5.0,
+                        help="Sampling-weight multiplier for contact transitions.")
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--num_layers", type=int, default=3)
     parser.add_argument("--save_dir", type=str, default="checkpoints")
@@ -97,6 +103,7 @@ def main() -> None:
 
     use_cache = args.latent_cache is not None
     encoder = None
+    full_weights = None
     if use_cache:
         cache = torch.load(args.latent_cache, map_location="cpu")
         # Trust the cache's own width: for a spatial encoder the flat latent dim
@@ -104,6 +111,13 @@ def main() -> None:
         latent_dim = int(cache["latent"].shape[1])
         full = TensorDataset(cache["latent"], cache["action"], cache["next_latent"])
         print(f"Loaded latent cache: {cache['latent'].shape[0]} transitions (dim={latent_dim})")
+        if args.contact_weighting:
+            if "contact" in cache:
+                contact = cache["contact"].numpy().astype(bool)
+                full_weights = np.where(contact, args.contact_boost, 1.0)
+            else:
+                print("  WARNING: cache has no 'contact' key -- re-run cache_latents.py. "
+                      "Contact weighting disabled for this run.")
     else:
         encoder = ResNetEncoder.from_config(enc_config).to(device)
         encoder.load_state_dict(enc_ckpt["encoder_state"])
@@ -113,10 +127,28 @@ def main() -> None:
         latent_dim = encoder.latent_dim
         full = TrajectoryDataset(args.data)
         print(f"Image path (slow): {len(full)} transitions")
+        if args.contact_weighting:
+            full_weights = full.contact_weights(contact_boost=args.contact_boost)
 
     val_size = int(len(full) * args.val_split)
     train_set, val_set = random_split(full, [len(full) - val_size, val_size])
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True,
+
+    sampler = None
+    if full_weights is not None:
+        # random_split returns a Subset; index the full-dataset weights by its own
+        # indices so the sampler lines up with the training split.
+        train_w = np.asarray(full_weights)[train_set.indices]
+        sampler = WeightedRandomSampler(
+            torch.as_tensor(train_w, dtype=torch.double),
+            num_samples=len(train_set), replacement=True,
+        )
+        n_c = int((train_w > 1.0).sum())
+        print(f"Contact weighting ON: {n_c}/{len(train_w)} train samples are contact "
+              f"({n_c / len(train_w):.1%}), boost={args.contact_boost}")
+
+    # shuffle and sampler are mutually exclusive in DataLoader.
+    train_loader = DataLoader(train_set, batch_size=args.batch_size,
+                              shuffle=(sampler is None), sampler=sampler,
                               num_workers=args.num_workers, pin_memory=True, drop_last=True)
     val_loader = DataLoader(val_set, batch_size=args.batch_size * 2, shuffle=False,
                             num_workers=args.num_workers, pin_memory=True)
