@@ -123,3 +123,40 @@ def test_contact_weights_mix(synthetic_h5):
     n_contact = int((w > 1.0).sum())
     # even episodes move the block, odd don't -> expect a strict, non-trivial mix
     assert 0 < n_contact < len(ds)
+
+
+def test_contact_sampler_actually_oversamples(synthetic_h5):
+    """Constructing the sampler is not enough -- it must shift the draw distribution.
+
+    Mirrors exactly what train.py / train_dynamics_mlp.py do: weight the full
+    dataset, then index by the train Subset's own indices.
+    """
+    from torch.utils.data import WeightedRandomSampler, random_split
+
+    ds = TrajectoryDataset(synthetic_h5)
+    boost = 5.0
+    w = ds.contact_weights(contact_boost=boost)
+    n_train = int(len(ds) * 0.9)
+    train_set, _ = random_split(ds, [n_train, len(ds) - n_train],
+                                generator=torch.Generator().manual_seed(0))
+    train_w = np.asarray(w)[train_set.indices]
+    sampler = WeightedRandomSampler(
+        torch.as_tensor(train_w, dtype=torch.double),
+        num_samples=len(train_set), replacement=True,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    # Expectation derived from the weights themselves, not hardcoded.
+    is_contact = train_w > 1.0
+    expected = float(train_w[is_contact].sum() / train_w.sum())
+    base = float(is_contact.mean())
+
+    # The sampler yields indices into the train Subset (0..len(train_set)-1), so
+    # look up contact via train_w, NOT the full dataset.
+    drawn = np.array([bool(is_contact[i]) for i in sampler])
+    empirical = float(drawn.mean())
+
+    assert empirical > base + 0.15, f"no real shift: {empirical:.3f} vs base {base:.3f}"
+    assert abs(empirical - expected) < 0.08, (
+        f"empirical {empirical:.3f} != analytic {expected:.3f}")
+

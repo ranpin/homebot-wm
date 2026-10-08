@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 from tqdm import tqdm
 
 from wm_core.dynamics.diffusion_dynamics import DiffusionDynamics
@@ -90,6 +90,11 @@ def main() -> None:
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--val_split", type=float, default=0.1)
+    parser.add_argument("--contact_weighting", action="store_true",
+                        help="Upweight contact transitions (block actually moved) via a "
+                             "WeightedRandomSampler. Off by default so runs stay comparable.")
+    parser.add_argument("--contact_boost", type=float, default=5.0,
+                        help="Sampling-weight multiplier for contact transitions.")
     parser.add_argument("--adapter_dim", type=int, default=64)
     parser.add_argument("--latent_dim", type=int, default=64)
     parser.add_argument("--spatial", dest="spatial", action="store_true", default=True,
@@ -122,8 +127,23 @@ def main() -> None:
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(dataset, [train_size, val_size])
 
+    sampler = None
+    if args.contact_weighting:
+        # random_split returns a Subset; index the full-dataset weights by its own
+        # indices so the sampler lines up with the training split.
+        full_weights = dataset.contact_weights(contact_boost=args.contact_boost)
+        train_w = full_weights[train_set.indices]
+        sampler = WeightedRandomSampler(
+            torch.as_tensor(train_w, dtype=torch.double),
+            num_samples=len(train_set), replacement=True,
+        )
+        n_c = int((train_w > 1.0).sum())
+        print(f"Contact weighting ON: {n_c}/{len(train_w)} train samples are contact "
+              f"({n_c / len(train_w):.1%}), boost={args.contact_boost}")
+
+    # shuffle and sampler are mutually exclusive in DataLoader.
     train_loader = DataLoader(
-        train_set, batch_size=args.batch_size, shuffle=True,
+        train_set, batch_size=args.batch_size, shuffle=(sampler is None), sampler=sampler,
         num_workers=args.num_workers, pin_memory=True, drop_last=True,
     )
     val_loader = DataLoader(
