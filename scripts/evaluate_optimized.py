@@ -5,6 +5,7 @@ enabling effective CEM planning.
 """
 
 import argparse
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -71,16 +72,24 @@ def evaluate_episode(
     max_steps: int = 200,
     diffusion_steps: int = 10,  # Reduced for faster planning
     render: bool = False,
+    obs_horizon: int = 1,
 ) -> dict:
     """Run one evaluation episode with closed-loop planning."""
     obs, info = env.reset()
 
     frames = []
     plan_idx = 0
+    history = deque(maxlen=obs_horizon)
 
     for step in range(max_steps):
         # Match training normalization (TrajectoryDataset divides images by 255).
-        image = torch.from_numpy(obs["image"]).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
+        frame = torch.from_numpy(obs["image"]).permute(2, 0, 1).float() / 255.0
+        history.append(frame)
+        # Pad the window at episode start by repeating the oldest frame, mirroring
+        # TrajectoryDataset._load_window's clamp-at-0 behaviour.
+        while len(history) < obs_horizon:
+            history.appendleft(history[0])
+        image = torch.cat(list(history), dim=0).unsqueeze(0).to(device)  # (1, k*3, H, W)
 
         with torch.no_grad():
             latent = encoder(image)
@@ -177,6 +186,7 @@ def main():
             env, encoder, dynamics, block_decoder, planner, device,
             target_pos, max_steps=args.max_steps,
             diffusion_steps=args.diffusion_steps, render=args.render,
+            obs_horizon=encoder.obs_horizon,
         )
         results.append(result)
 

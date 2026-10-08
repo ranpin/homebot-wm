@@ -64,7 +64,7 @@ def main():
     decoder.load_state_dict(torch.load(args.block_decoder, map_location=device))
     decoder.eval()
 
-    dataset = TrajectoryDataset(args.data)
+    dataset = TrajectoryDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     idxs = torch.randperm(len(dataset))[:args.n_states].tolist()
     with torch.no_grad():
         latents = torch.stack([encoder(dataset[i]["image"][None].to(device))[0] for i in idxs])

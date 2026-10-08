@@ -125,7 +125,7 @@ def main() -> None:
         for p in encoder.parameters():
             p.requires_grad = False
         latent_dim = encoder.latent_dim
-        full = TrajectoryDataset(args.data)
+        full = TrajectoryDataset(args.data, obs_horizon=enc_config.get("obs_horizon", 1))
         print(f"Image path (slow): {len(full)} transitions")
         if args.contact_weighting:
             full_weights = full.contact_weights(contact_boost=args.contact_boost)
@@ -168,6 +168,7 @@ def main() -> None:
         "spatial": enc_config.get("spatial", False),
         "spatial_out_channels": enc_config.get("spatial_out_channels", 16),
         "image_size": enc_config.get("image_size", 84),
+        "obs_horizon": enc_config.get("obs_horizon", 1),
         "hidden_dim": args.hidden_dim, "num_layers": args.num_layers,
         "action_dim": 2, "diffusion_steps": enc_config.get("diffusion_steps", 50),
         "dynamics_type": "mlp",
