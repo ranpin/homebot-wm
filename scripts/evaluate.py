@@ -39,10 +39,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> tuple:
     ckpt = torch.load(checkpoint_path, map_location=device)
     config = ckpt["config"]
 
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"],
-        output_dim=config["latent_dim"],
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
 
     dynamics = build_dynamics(config).to(device)
 
@@ -134,7 +131,7 @@ def main():
 
     print(f"Loading reward predictor from {args.reward_predictor}")
     reward_predictor = load_reward_predictor(
-        args.reward_predictor, config["latent_dim"], device
+        args.reward_predictor, encoder.latent_dim, device
     )
 
     env = HomeTabletopEnv()

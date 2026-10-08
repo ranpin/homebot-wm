@@ -39,10 +39,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> tuple:
     ckpt = torch.load(checkpoint_path, map_location=device)
     config = ckpt["config"]
 
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"],
-        output_dim=config["latent_dim"],
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
 
     dynamics = build_dynamics(config).to(device)
 
@@ -148,7 +145,7 @@ def main():
     encoder, dynamics, config = load_model(args.checkpoint, device)
 
     print(f"Loading block decoder from {args.block_decoder}")
-    block_decoder = load_block_decoder(args.block_decoder, config["latent_dim"], device)
+    block_decoder = load_block_decoder(args.block_decoder, encoder.latent_dim, device)
 
     env = HomeTabletopEnv()
     target_pos = env.target_pos

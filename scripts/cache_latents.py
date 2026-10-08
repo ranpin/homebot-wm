@@ -40,9 +40,7 @@ def main() -> None:
 
     ckpt = torch.load(args.encoder_ckpt, map_location=device)
     config = ckpt["config"]
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"], output_dim=config["latent_dim"]
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.eval()
 

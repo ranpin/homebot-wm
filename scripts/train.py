@@ -92,6 +92,13 @@ def main() -> None:
     parser.add_argument("--val_split", type=float, default=0.1)
     parser.add_argument("--adapter_dim", type=int, default=64)
     parser.add_argument("--latent_dim", type=int, default=64)
+    parser.add_argument("--spatial", dest="spatial", action="store_true", default=True,
+                        help="Keep the conv feature map instead of global-average-pooling (default).")
+    parser.add_argument("--no_spatial", dest="spatial", action="store_false",
+                        help="Legacy pooled latent; only for reproducing old checkpoints.")
+    parser.add_argument("--spatial_out_channels", type=int, default=16,
+                        help="Per-cell channels of the spatial latent (flat dim = C*grid*grid).")
+    parser.add_argument("--image_size", type=int, default=84)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--num_layers", type=int, default=3)
     parser.add_argument("--diffusion_steps", type=int, default=50)
@@ -127,9 +134,19 @@ def main() -> None:
     print(f"Train: {len(train_set)} samples, Val: {len(val_set)} samples")
     print(f"Effective batch size: {args.batch_size * args.grad_accum}")
 
-    encoder = ResNetEncoder(adapter_dim=args.adapter_dim, output_dim=args.latent_dim).to(device)
+    encoder = ResNetEncoder(
+        adapter_dim=args.adapter_dim,
+        output_dim=args.spatial_out_channels if args.spatial else args.latent_dim,
+        spatial=args.spatial,
+        image_size=args.image_size,
+    ).to(device)
+    # For a spatial encoder the flat latent dim is out_channels*grid*grid, which
+    # is what the dynamics model and every downstream consumer must be sized to.
+    latent_dim = encoder.latent_dim
+    print(f"Encoder: spatial={args.spatial} latent_dim={latent_dim}")
+
     dynamics = DiffusionDynamics(
-        latent_dim=args.latent_dim,
+        latent_dim=latent_dim,
         action_dim=2,
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,
@@ -194,12 +211,16 @@ def main() -> None:
         )
 
         if epoch % 10 == 0 or epoch == args.epochs:
+            cfg = vars(args).copy()
+            # Record the real flat latent dim, not the --latent_dim flag: for a
+            # spatial encoder build_dynamics() sizes itself off this value.
+            cfg["latent_dim"] = latent_dim
             ckpt = {
                 "epoch": epoch,
                 "encoder_state": encoder.state_dict(),
                 "dynamics_state": dynamics.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
-                "config": vars(args),
+                "config": cfg,
             }
             torch.save(ckpt, save_dir / f"world_model_ep{epoch:03d}.pt")
             print(f"  Saved checkpoint to {save_dir / f'world_model_ep{epoch:03d}.pt'}")
