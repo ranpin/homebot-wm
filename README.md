@@ -4,6 +4,10 @@
 
 基于世界模型的家庭机器人轻量化算法框架，面向 NVIDIA Jetson AGX Orin 部署，结合扩散模型剪枝/量化/蒸馏优化经验。
 
+## 实验报告
+
+- **[视觉扩散策略的压缩与边缘部署](docs/compression/README.md)** — 主线实验报告（论文式）。载体 = Diffusion Policy (image Push-T, 262M)，在 8GB RTX 3070 从头训练到 87.6%，再走 ONNX 导出 → INT8 量化 → DDIM 步数压缩的完整链路（n=50 可靠数据）。结论：INT8 精度无损、步数压缩须用 DDIM、推荐部署 DDIM-50+INT8（2× 加速不掉分）。配套 [METHODOLOGY](docs/compression/METHODOLOGY.md)（来源/数据/命令）· [PROBLEMS](docs/compression/PROBLEMS.md)（踩坑）· [scripts](docs/compression/scripts/) · [eval 结果](docs/compression/eval/)。
+
 ## 项目特点
 
 - **世界模型驱动**：使用扩散型世界模型（Diffusion Policy）统一导航与操作任务
