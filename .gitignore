@@ -61,3 +61,5 @@ Thumbs.db
 
 # Demo artifacts (regenerate via evaluate_state.py --record_dir)
 demo/
+# ...except the committed compression showcase reel (a deliverable, ~24min CPU to regen)
+!docs/compression/demo/
