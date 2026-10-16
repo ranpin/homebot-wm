@@ -138,6 +138,7 @@
         '<li><b>片段 4</b> · seed 10004 · coverage <b>0.72</b> —— 部分对齐（展示非满分情形）。</li>'+
         '</ol>'+
         '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「报告」tab。</p>'+
+        '<p class="demo-note">注：策略是反应式模仿（行为克隆），无「对齐即停」机制，整个回合持续输出动作；coverage 取回合内最大值，故个别片段末尾把块推出对齐位不会降低该段分数——这是 Push-T + 模仿策略的固有行为，非压缩引入。</p>'+
         '</div>'+
         '</div>';
       window.scrollTo({top:0, behavior:'smooth'});
