@@ -28,7 +28,9 @@
   }
   nav.tabs button:hover{border-color:var(--accent); color:var(--accent);}
   nav.tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
-  nav.tabs .gh{margin-left:auto; font-size:.85rem; color:var(--muted); text-decoration:none;}
+  nav.tabs .back{margin-left:auto; font-size:.85rem; color:var(--muted); text-decoration:none;}
+  nav.tabs .back:hover{color:var(--accent);}
+  nav.tabs .gh{font-size:.85rem; color:var(--muted); text-decoration:none;}
   nav.tabs .gh:hover{color:var(--accent);}
   .content{font-size:1rem;}
   .content h1{font-size:1.5rem; border-bottom:1px solid var(--border); padding-bottom:.35rem; margin-top:1.6rem;}
@@ -70,6 +72,7 @@
     <button data-doc="README" class="active">报告</button>
     <button data-doc="METHODOLOGY">方法</button>
     <button data-doc="PROBLEMS">问题记录</button>
+    <a class="back" href="https://ranpin.github.io/edge-ai-docs/#robot">← 返回技术文档</a>
     <a class="gh" href="https://github.com/ranpin/homebot-wm/tree/main/docs/compression" target="_blank" rel="noopener">GitHub 源 ↗</a>
   </nav>
   <div class="content" id="content"><p class="loading">加载中…</p></div>
