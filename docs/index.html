@@ -55,12 +55,24 @@
   .content li{margin:.3rem 0;}
   .mermaid-slot{text-align:center; margin:1.6rem 0; overflow-x:auto;}
   .mermaid-slot svg{max-width:100%; height:auto;}
-  figure.demo-fig{margin:.4rem 0 1.5rem; text-align:center;}
+  .demo-wrap{font-size:.98rem;}
+  .demo-lead{margin:.3rem 0 1rem;}
+  .demo-task{background:var(--soft); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin:0 0 1rem;}
+  .demo-task p{margin:.45rem 0;}
+  .demo-warn{border-left:3px solid #e6a700; padding-left:.7rem;}
+  .demo-legend{display:flex; flex-wrap:wrap; gap:.45rem 1.1rem; margin:0 0 1.1rem; font-size:.88rem; color:var(--muted);}
+  .demo-legend .lg{display:inline-flex; align-items:center; gap:.4rem;}
+  .demo-legend .lg i{width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.18); flex:none;}
+  figure.demo-fig{margin:.3rem 0 1.3rem; text-align:center;}
   figure.demo-fig video{
     max-width:100%; width:480px; border-radius:10px; border:1px solid var(--border);
     box-shadow:0 2px 14px rgba(0,0,0,.10); background:#000;
   }
-  figure.demo-fig figcaption{color:var(--muted); font-size:.85rem; margin-top:.65rem;}
+  .demo-segs{font-size:.93rem;}
+  .demo-segs-t{font-weight:600; margin:.2rem 0 .45rem;}
+  .demo-segs ol{margin:.2rem 0 .6rem; padding-left:1.6rem;}
+  .demo-segs li{margin:.4rem 0;}
+  .demo-note{color:var(--muted); font-size:.86rem; margin-top:.5rem;}
   .loading{color:var(--muted); font-style:italic;}
   .err{color:#dc3545;}
   footer{margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
@@ -102,11 +114,32 @@
   async function load(doc){
     if(doc==='DEMO'){
       content.innerHTML =
+        '<div class="demo-wrap">'+
+        '<p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，推荐部署配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>'+
+        '<div class="demo-task">'+
+        '<p><b>任务 Push-T</b>：一个<b>质点 agent</b>（蓝色圆点）把 <b>T 形块</b>（灰色）推去与<b>目标轮廓</b>（绿色）对齐。coverage（覆盖率）= T 块与目标区的重叠比例（0–1），即本任务的 score，≥0.95 记成功。</p>'+
+        '<p class="demo-warn">⚠ 画面里<b>没有机械臂 / 机器人本体</b>——Push-T 是 Diffusion Policy 的标准 2D 抽象基准，agent 是直接施力的质点。选它当载体是因为它轻量、能在 8GB 上从头训练，而本项目的交付物是<b>任务无关的压缩方法链</b>（ONNX→INT8→DDIM→TensorRT）。</p>'+
+        '</div>'+
+        '<div class="demo-legend">'+
+        '<span class="lg"><i style="background:#4169E1"></i>agent（质点·施力点）</span>'+
+        '<span class="lg"><i style="background:#778899"></i>T 块（被推物体）</span>'+
+        '<span class="lg"><i style="background:#90EE90"></i>目标轮廓</span>'+
+        '<span class="lg"><i style="background:#FF0000"></i>当前动作指令</span>'+
+        '</div>'+
         '<figure class="demo-fig">'+
         '<video controls preload="metadata" src="compression/demo/reel.mp4"></video>'+
-        '<figcaption>Demo · 压缩后策略（DDIM-50 + INT8）Push-T 闭环 rollout · '+
-        '4 个初始条件 score 1.00 / 1.00 / 0.96 / 0.72 · 2× 速</figcaption>'+
-        '</figure>';
+        '</figure>'+
+        '<div class="demo-segs">'+
+        '<p class="demo-segs-t">逐段说明（与视频内「片段 N/4」标识对应）</p>'+
+        '<ol>'+
+        '<li><b>片段 1</b> · seed 10001 · coverage <b>1.00</b> —— T 块完美对齐目标（满分）。</li>'+
+        '<li><b>片段 2</b> · seed 10002 · coverage <b>1.00</b> —— 另一初始位姿，同样满分。</li>'+
+        '<li><b>片段 3</b> · seed 10000 · coverage <b>0.96</b> —— 接近完美对齐。</li>'+
+        '<li><b>片段 4</b> · seed 10004 · coverage <b>0.72</b> —— 部分对齐（展示非满分情形）。</li>'+
+        '</ol>'+
+        '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「报告」tab。</p>'+
+        '</div>'+
+        '</div>';
       window.scrollTo({top:0, behavior:'smooth'});
       return;
     }
