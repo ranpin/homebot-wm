@@ -5,6 +5,7 @@ measures success rate and task completion metrics.
 """
 
 import argparse
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -39,10 +40,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> tuple:
     ckpt = torch.load(checkpoint_path, map_location=device)
     config = ckpt["config"]
 
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"],
-        output_dim=config["latent_dim"],
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
 
     dynamics = build_dynamics(config).to(device)
 
@@ -72,14 +70,22 @@ def evaluate_episode(
     device: torch.device,
     max_steps: int = 200,
     render: bool = False,
+    obs_horizon: int = 1,
 ) -> dict:
     """Run one evaluation episode with closed-loop planning."""
     obs, info = env.reset()
 
     frames = []
+    history = deque(maxlen=obs_horizon)
     for step in range(max_steps):
         # Match training normalization (TrajectoryDataset divides images by 255).
-        image = torch.from_numpy(obs["image"]).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
+        frame = torch.from_numpy(obs["image"]).permute(2, 0, 1).float() / 255.0
+        history.append(frame)
+        # Pad the window at episode start by repeating the oldest frame, mirroring
+        # TrajectoryDataset._load_window's clamp-at-0 behaviour.
+        while len(history) < obs_horizon:
+            history.appendleft(history[0])
+        image = torch.cat(list(history), dim=0).unsqueeze(0).to(device)  # (1, k*3, H, W)
 
         with torch.no_grad():
             latent = encoder(image)
@@ -134,7 +140,7 @@ def main():
 
     print(f"Loading reward predictor from {args.reward_predictor}")
     reward_predictor = load_reward_predictor(
-        args.reward_predictor, config["latent_dim"], device
+        args.reward_predictor, encoder.latent_dim, device
     )
 
     env = HomeTabletopEnv()
@@ -149,6 +155,7 @@ def main():
         result = evaluate_episode(
             env, encoder, dynamics, reward_predictor, planner, device,
             max_steps=args.max_steps, render=args.render,
+            obs_horizon=encoder.obs_horizon,
         )
         results.append(result)
 

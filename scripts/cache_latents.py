@@ -8,6 +8,8 @@ Saves a dict of tensors (in dataset order) to --out:
     latent, next_latent : (N, latent_dim)
     action              : (N, action_dim)
     block_pos, next_block_pos : (N, 2)   # ground-truth from state, for eval
+    contact             : (N,) bool      # block moved on this transition (for
+                                         # contact-weighted sampling downstream)
     config              : encoder config dict (adapter_dim, latent_dim, ...)
 
 Usage:
@@ -40,20 +42,20 @@ def main() -> None:
 
     ckpt = torch.load(args.encoder_ckpt, map_location=device)
     config = ckpt["config"]
-    encoder = ResNetEncoder(
-        adapter_dim=config["adapter_dim"], output_dim=config["latent_dim"]
-    ).to(device)
+    encoder = ResNetEncoder.from_config(config).to(device)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.eval()
 
-    dataset = TrajectoryDataset(args.data)
+    # obs_horizon comes from the encoder config so the dataset window and the
+    # encoder's expected channel count can never disagree.
+    dataset = TrajectoryDataset(args.data, obs_horizon=config.get("obs_horizon", 1))
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=True,
     )
     print(f"Encoding {len(dataset)} transitions from {args.data}")
 
-    latents, next_latents, actions, block_pos, next_block_pos = [], [], [], [], []
+    latents, next_latents, actions, block_pos, next_block_pos, contacts = [], [], [], [], [], []
     with torch.no_grad():
         for batch in tqdm(loader, desc="caching"):
             image = batch["image"].to(device)
@@ -63,6 +65,7 @@ def main() -> None:
             actions.append(batch["action"])
             block_pos.append(batch["state"][:, 4:6])
             next_block_pos.append(batch["next_state"][:, 4:6])
+            contacts.append(batch["contact"])
 
     out = {
         "latent": torch.cat(latents),
@@ -70,11 +73,15 @@ def main() -> None:
         "action": torch.cat(actions),
         "block_pos": torch.cat(block_pos),
         "next_block_pos": torch.cat(next_block_pos),
+        "contact": torch.cat(contacts),
         "config": config,
         "encoder_ckpt": args.encoder_ckpt,
     }
     torch.save(out, args.out)
+    n_contact = int(out["contact"].sum())
     print(f"Saved {out['latent'].shape[0]} latents (dim={out['latent'].shape[1]}) to {args.out}")
+    print(f"  contact transitions: {n_contact}/{len(out['contact'])} "
+          f"({n_contact / len(out['contact']):.1%})")
 
 
 if __name__ == "__main__":
