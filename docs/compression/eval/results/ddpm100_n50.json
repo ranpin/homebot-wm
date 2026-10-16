@@ -1,0 +1,7 @@
+[
+  {
+    "steps": 100,
+    "scheduler": "ddpm",
+    "mean_score": 0.786457307327099
+  }
+]

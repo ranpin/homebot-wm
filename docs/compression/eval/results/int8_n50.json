@@ -1,0 +1,8 @@
+{
+  "_note": "INT8 closed-loop eval, ddim16, n_test=50, same env+noise seeds (paired). Extracted from n50.log / ablation.log on pc-3070 (2026-10-14). mean_score = Push-T target coverage 0-1.",
+  "config": {"scheduler": "ddim", "steps": 16, "n_test": 50, "seed": 0},
+  "fp32": {"mean_score": 0.7378675855495522},
+  "int8_per_tensor_all_ops": {"mean_score": 0.7876, "unet_int8_mb": 241, "diff_vs_fp32_max": 0.06898},
+  "int8_per_channel_conv": {"mean_score": 0.7669, "unet_int8_mb": 278, "diff_vs_fp32_max": 0.05256},
+  "conclusion": "all three statistically indistinguishable at n=50 -> INT8 PTQ is accuracy-free for this policy"
+}
