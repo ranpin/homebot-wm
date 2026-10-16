@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 from tqdm import tqdm
 
 from wm_core.dynamics.diffusion_dynamics import DiffusionDynamics
@@ -90,8 +90,23 @@ def main() -> None:
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--val_split", type=float, default=0.1)
+    parser.add_argument("--contact_weighting", action="store_true",
+                        help="Upweight contact transitions (block actually moved) via a "
+                             "WeightedRandomSampler. Off by default so runs stay comparable.")
+    parser.add_argument("--contact_boost", type=float, default=5.0,
+                        help="Sampling-weight multiplier for contact transitions.")
     parser.add_argument("--adapter_dim", type=int, default=64)
     parser.add_argument("--latent_dim", type=int, default=64)
+    parser.add_argument("--spatial", dest="spatial", action="store_true", default=True,
+                        help="Keep the conv feature map instead of global-average-pooling (default).")
+    parser.add_argument("--no_spatial", dest="spatial", action="store_false",
+                        help="Legacy pooled latent; only for reproducing old checkpoints.")
+    parser.add_argument("--spatial_out_channels", type=int, default=16,
+                        help="Per-cell channels of the spatial latent (flat dim = C*grid*grid).")
+    parser.add_argument("--image_size", type=int, default=84)
+    parser.add_argument("--obs_horizon", type=int, default=1,
+                        help="Stack k frames into the observation so the latent carries "
+                             "velocity; a single frame cannot show a force's effect.")
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--num_layers", type=int, default=3)
     parser.add_argument("--diffusion_steps", type=int, default=50)
@@ -110,13 +125,28 @@ def main() -> None:
         print(f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
 
     print(f"Loading dataset: {args.data}")
-    dataset = TrajectoryDataset(args.data)
+    dataset = TrajectoryDataset(args.data, obs_horizon=args.obs_horizon)
     val_size = int(len(dataset) * args.val_split)
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(dataset, [train_size, val_size])
 
+    sampler = None
+    if args.contact_weighting:
+        # random_split returns a Subset; index the full-dataset weights by its own
+        # indices so the sampler lines up with the training split.
+        full_weights = dataset.contact_weights(contact_boost=args.contact_boost)
+        train_w = full_weights[train_set.indices]
+        sampler = WeightedRandomSampler(
+            torch.as_tensor(train_w, dtype=torch.double),
+            num_samples=len(train_set), replacement=True,
+        )
+        n_c = int((train_w > 1.0).sum())
+        print(f"Contact weighting ON: {n_c}/{len(train_w)} train samples are contact "
+              f"({n_c / len(train_w):.1%}), boost={args.contact_boost}")
+
+    # shuffle and sampler are mutually exclusive in DataLoader.
     train_loader = DataLoader(
-        train_set, batch_size=args.batch_size, shuffle=True,
+        train_set, batch_size=args.batch_size, shuffle=(sampler is None), sampler=sampler,
         num_workers=args.num_workers, pin_memory=True, drop_last=True,
     )
     val_loader = DataLoader(
@@ -127,9 +157,20 @@ def main() -> None:
     print(f"Train: {len(train_set)} samples, Val: {len(val_set)} samples")
     print(f"Effective batch size: {args.batch_size * args.grad_accum}")
 
-    encoder = ResNetEncoder(adapter_dim=args.adapter_dim, output_dim=args.latent_dim).to(device)
+    encoder = ResNetEncoder(
+        adapter_dim=args.adapter_dim,
+        output_dim=args.spatial_out_channels if args.spatial else args.latent_dim,
+        spatial=args.spatial,
+        image_size=args.image_size,
+        obs_horizon=args.obs_horizon,
+    ).to(device)
+    # For a spatial encoder the flat latent dim is out_channels*grid*grid, which
+    # is what the dynamics model and every downstream consumer must be sized to.
+    latent_dim = encoder.latent_dim
+    print(f"Encoder: spatial={args.spatial} latent_dim={latent_dim}")
+
     dynamics = DiffusionDynamics(
-        latent_dim=args.latent_dim,
+        latent_dim=latent_dim,
         action_dim=2,
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,
@@ -194,12 +235,16 @@ def main() -> None:
         )
 
         if epoch % 10 == 0 or epoch == args.epochs:
+            cfg = vars(args).copy()
+            # Record the real flat latent dim, not the --latent_dim flag: for a
+            # spatial encoder build_dynamics() sizes itself off this value.
+            cfg["latent_dim"] = latent_dim
             ckpt = {
                 "epoch": epoch,
                 "encoder_state": encoder.state_dict(),
                 "dynamics_state": dynamics.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
-                "config": vars(args),
+                "config": cfg,
             }
             torch.save(ckpt, save_dir / f"world_model_ep{epoch:03d}.pt")
             print(f"  Saved checkpoint to {save_dir / f'world_model_ep{epoch:03d}.pt'}")
