@@ -1,5 +1,10 @@
 # Default training configuration
 # Designed for RTX 3070 (8GB VRAM) training budget
+#
+# ⚠️ 实现状态（诚实声明）：本配置描述的是「世界模型框架」的目标形态，对应 wm_core/wm_sim
+#    的早期探索（已暂停，结论见 docs/architecture.md 的 Phase 1 Results）。其中部分目标
+#    （mujoco_home 家庭场景、compress 压缩工具链）并未兑现——wm_compress/wm_deploy 等仍是空壳。
+#    真正已交付的主线是扩散策略压缩部署，其配置/命令见 docs/compression/METHODOLOGY.md，不走本文件。
 defaults:
   - model: diffusion_policy
   - sim: mujoco_home
