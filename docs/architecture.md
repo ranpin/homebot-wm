@@ -4,6 +4,11 @@
 
 HomeBot-WM is a world model-driven algorithm framework for home robotics, targeting deployment on NVIDIA Jetson AGX Orin. The framework combines navigation and manipulation under a unified world model architecture, with a strong emphasis on lightweight deployment through model compression techniques.
 
+> **⚠️ 实现状态（2026-10，诚实声明）**：本文档描述的是**目标架构**，不是已交付系统。当前实际：
+> - ✅ **已实现**：`wm_core`（encoder/dynamics/planner）、`wm_sim`（MuJoCo 2D push-block）、`scripts/`——即下文「世界模型探索」，结论见 [Phase 1 Results](#phase-1-results-push-block-mvp)（vision-latent 闭环 0%，state-space ensemble 25%）。
+> - ⬜ **仅占位、未实现**：`wm_compress` / `wm_deploy` / `wm_eval` / `wm_nav` / `wm_manip`（各只有 1 行 `__init__.py`）。下文对这些模块的描述均为**规划意图**。
+> - ✅ **真正已交付的主线**是**扩散策略压缩部署**（不在本文档，见 [`compression/README.md`](compression/README.md) 与根 [README](../README.md)）。压缩流水线的实际脚本居 `docs/compression/scripts/`，尚未归位到 `wm_compress`/`wm_deploy`。
+
 ## System Architecture
 
 ```
@@ -56,7 +61,7 @@ The central module that learns environment dynamics.
   - `mlp` (`MLPDynamics`): deterministic **residual** regressor (`next = latent + MLP(latent, action)`), zero-initialized so it starts at the identity baseline. Added because, on the near-static tabletop task, the diffusion backend's per-step sampling variance exceeded the true frame-to-frame latent change and scored *worse than identity* — see the diagnostic below.
 - **planner/**: Action planner that uses the dynamics model to evaluate candidate action sequences (CEM, MPC, or shooting methods) and select the optimal one. `plan(latent, score_fn, num_steps=None)` forwards `num_steps` to the dynamics rollout.
 
-### wm_compress — Compression Toolkit
+### wm_compress — Compression Toolkit　⬜ 未实现（占位包）
 
 Leverages Stable Diffusion optimization experience for world model compression.
 
@@ -65,7 +70,7 @@ Leverages Stable Diffusion optimization experience for world model compression.
 - **distillation/**: Teacher-student knowledge distillation. Train a compact student model guided by the full-size teacher.
 - **benchmark/**: Automated evaluation comparing compressed vs. original models across task metrics and inference speed.
 
-### wm_deploy — Orin Deployment
+### wm_deploy — Orin Deployment　⬜ 未实现（占位包）
 
 End-to-end deployment pipeline for Jetson AGX Orin.
 
@@ -73,13 +78,13 @@ End-to-end deployment pipeline for Jetson AGX Orin.
 - **tensorrt/**: TensorRT engine building with FP16/INT8 precision, layer fusion, and memory optimization.
 - **pipeline/**: Multi-model inference scheduler that orchestrates perception → world model → planning with minimal latency.
 
-### wm_nav — Navigation
+### wm_nav — Navigation　⬜ 未实现（占位包）
 
 - World model-driven path planning with collision prediction
 - Local obstacle avoidance using dynamics model lookahead
 - Global map maintenance and goal-directed navigation
 
-### wm_manip — Manipulation
+### wm_manip — Manipulation　⬜ 未实现（占位包）
 
 - Grasp planning with world model outcome prediction
 - 6-DoF manipulation policy generation via diffusion model
@@ -100,7 +105,7 @@ End-to-end deployment pipeline for Jetson AGX Orin.
 - **Dataset** (`data/trajectories.h5`, ~235 MB): 2000 episodes / 360,647 transitions collected by a scripted potential-field expert (`wm_sim/expert.py`). Stores image/state/action/reward/success per step.
 - **Data-quality caveat**: the scripted expert only succeeds **~18%** of the time (most episodes time out). This is weak for *imitation*, but acceptable for learning *dynamics* — failed rollouts still contain valid physics transitions (the block decoder reaches ~0.35 error). The main risk is thin state coverage near the target; if closed-loop planning stalls on the "last push", prefer success-weighted resampling or an improved expert over changing the task.
 
-### wm_eval — Evaluation
+### wm_eval — Evaluation　⬜ 未实现（占位包）
 
 - **Navigation**: success rate, path efficiency, collision rate
 - **Manipulation**: grasp success rate, task completion rate

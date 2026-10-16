@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "homebot-wm"
 version = "0.1.0"
-description = "World Model-driven Lightweight Algorithm Framework for Home Robotics"
+description = "视觉扩散策略的压缩与边缘部署 —— 面向 Jetson Orin 的 WM/WAM 轻量化全链路学习项目（已交付：Diffusion Policy 压缩链路；世界模型框架为早期探索）"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
