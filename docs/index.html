@@ -55,6 +55,12 @@
   .content li{margin:.3rem 0;}
   .mermaid-slot{text-align:center; margin:1.6rem 0; overflow-x:auto;}
   .mermaid-slot svg{max-width:100%; height:auto;}
+  figure.demo-fig{margin:.4rem 0 1.5rem; text-align:center;}
+  figure.demo-fig video{
+    max-width:100%; width:480px; border-radius:10px; border:1px solid var(--border);
+    box-shadow:0 2px 14px rgba(0,0,0,.10); background:#000;
+  }
+  figure.demo-fig figcaption{color:var(--muted); font-size:.85rem; margin-top:.65rem;}
   .loading{color:var(--muted); font-style:italic;}
   .err{color:#dc3545;}
   footer{margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
@@ -69,7 +75,8 @@
     <div class="sub">HomeBot-WM 主线实验报告 · Diffusion Policy (image Push-T, 262M) → Jetson AGX Orin</div>
   </header>
   <nav class="tabs">
-    <button data-doc="README" class="active">报告</button>
+    <button data-doc="DEMO" class="active">Demo</button>
+    <button data-doc="README">报告</button>
     <button data-doc="METHODOLOGY">方法</button>
     <button data-doc="PROBLEMS">问题记录</button>
     <a class="back" href="https://ranpin.github.io/edge-ai-docs/#robot">← 返回技术文档</a>
@@ -93,6 +100,16 @@
   }
 
   async function load(doc){
+    if(doc==='DEMO'){
+      content.innerHTML =
+        '<figure class="demo-fig">'+
+        '<video controls preload="metadata" src="compression/demo/reel.mp4"></video>'+
+        '<figcaption>Demo · 压缩后策略（DDIM-50 + INT8）Push-T 闭环 rollout · '+
+        '4 个初始条件 score 1.00 / 1.00 / 0.96 / 0.72 · 2× 速</figcaption>'+
+        '</figure>';
+      window.scrollTo({top:0, behavior:'smooth'});
+      return;
+    }
     content.innerHTML = '<p class="loading">加载中…</p>';
     let md;
     try{
@@ -140,7 +157,7 @@
   }
 
   buttons.forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.doc)));
-  load('README');
+  load('DEMO');
 </script>
 </body>
 </html>
