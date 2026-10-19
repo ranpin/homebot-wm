@@ -1,5 +1,7 @@
 # HomeBot-WM
 
+> 📊 **在线报告 / 展示页**：<https://ranpin.github.io/homebot-wm/>
+
 **视觉扩散策略的压缩与边缘部署** —— 面向 Jetson AGX Orin 的 WM / WAM 轻量化全链路学习项目
 
 > 项目目标：学习**世界模型（World Model, WM）/ 世界动作模型（World-Action Model, WAM）**，构建最小模型 demo，打通
