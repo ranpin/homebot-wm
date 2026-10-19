@@ -5,98 +5,60 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉扩散策略的压缩与边缘部署 · HomeBot-WM</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<!-- 共享演示页外壳（配色/页头/章节/按钮/页脚统一，单一事实源在主站 public/demo-shell.css） -->
+<link rel="stylesheet" href="https://ranpin.github.io/demo-shell.css">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
-  :root{
-    --fg:#1f2328; --muted:#5f6b7a; --accent:#2563eb; --bg:#ffffff;
-    --code-bg:#f6f8fa; --border:#d8dee4; --soft:#f9fafb;
-  }
-  *{box-sizing:border-box;}
-  html{-webkit-text-size-adjust:100%;}
-  body{
-    margin:0; color:var(--fg); background:var(--bg); line-height:1.75;
-    font-family:-apple-system,BlinkMacSystemFont,"Songti SC","Times New Roman",serif;
-  }
-  .wrap{max-width:920px; margin:0 auto; padding:2.2rem 1.4rem 5rem;}
-  header.site{border-bottom:2px solid var(--accent); padding-bottom:1rem; margin-bottom:1.2rem;}
-  header.site h1{font-size:1.65rem; margin:0 0 .35rem; line-height:1.3;}
-  header.site .sub{color:var(--muted); font-size:.92rem;}
-  nav.tabs{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin:0 0 2rem;}
-  nav.tabs button{
-    font:inherit; font-size:.9rem; padding:.4rem .95rem; border:1px solid var(--border);
-    background:#fff; border-radius:7px; cursor:pointer; color:var(--muted); transition:all .15s;
-  }
-  nav.tabs button:hover{border-color:var(--accent); color:var(--accent);}
-  nav.tabs button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
-  nav.tabs .back{margin-left:auto; font-size:.85rem; color:var(--muted); text-decoration:none;}
-  nav.tabs .back:hover{color:var(--accent);}
-  nav.tabs .gh{font-size:.85rem; color:var(--muted); text-decoration:none;}
-  nav.tabs .gh:hover{color:var(--accent);}
-  .content{font-size:1rem;}
-  .content h1{font-size:1.5rem; border-bottom:1px solid var(--border); padding-bottom:.35rem; margin-top:1.6rem;}
-  .content h2{font-size:1.28rem; margin-top:2.2rem; padding-left:.6rem; border-left:4px solid var(--accent); line-height:1.3;}
-  .content h3{font-size:1.08rem; margin-top:1.6rem;}
-  .content p{margin:.85rem 0;}
-  .content table{border-collapse:collapse; width:100%; margin:1.2rem 0; font-size:.88rem; display:block; overflow-x:auto;}
-  .content th,.content td{border:1px solid var(--border); padding:.45rem .7rem; text-align:left; vertical-align:top;}
-  .content th{background:var(--code-bg); font-weight:600;}
-  .content tr:nth-child(even) td{background:var(--soft);}
-  .content code{background:var(--code-bg); padding:.12rem .35rem; border-radius:4px; font-size:.85em;
-    font-family:"SF Mono",Menlo,Consolas,monospace;}
-  .content pre{background:var(--code-bg); padding:.9rem 1rem; border-radius:8px; overflow-x:auto; margin:1.1rem 0;}
-  .content pre code{background:none; padding:0; font-size:.82rem;}
-  .content blockquote{border-left:3px solid var(--accent); margin:1.1rem 0; padding:.4rem 1.1rem;
-    color:var(--muted); background:var(--soft); border-radius:0 6px 6px 0;}
-  .content blockquote p{margin:.4rem 0;}
-  .content a{color:var(--accent); text-decoration:none;}
-  .content a:hover{text-decoration:underline;}
-  .content hr{border:none; border-top:1px solid var(--border); margin:2rem 0;}
-  .content ul,.content ol{padding-left:1.5rem;}
-  .content li{margin:.3rem 0;}
-  .mermaid-slot{text-align:center; margin:1.6rem 0; overflow-x:auto;}
-  .mermaid-slot svg{max-width:100%; height:auto;}
+  /* 仅保留本页 Demo tab 专属的视觉元素；结构色一律引用外壳的 --ds-* 变量 */
   .demo-wrap{font-size:.98rem;}
   .demo-lead{margin:.3rem 0 1rem;}
-  .demo-task{background:var(--soft); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin:0 0 1rem;}
+  .demo-task{background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); padding:.75rem 1rem; margin:0 0 1rem;}
   .demo-task p{margin:.45rem 0;}
-  .demo-warn{border-left:3px solid #e6a700; padding-left:.7rem;}
-  .demo-legend{display:flex; flex-wrap:wrap; gap:.45rem 1.1rem; margin:0 0 1.1rem; font-size:.88rem; color:var(--muted);}
+  .demo-warn{border-left:3px solid var(--ds-warn); background:var(--ds-warn-soft); padding:.6rem 1rem; border-radius:0 6px 6px 0;}
+  .demo-legend{display:flex; flex-wrap:wrap; gap:.45rem 1.1rem; margin:0 0 1.1rem; font-size:.88rem; color:var(--ds-muted);}
   .demo-legend .lg{display:inline-flex; align-items:center; gap:.4rem;}
   .demo-legend .lg i{width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.18); flex:none;}
   figure.demo-fig{margin:.3rem 0 1.3rem; text-align:center;}
   figure.demo-fig video{
-    max-width:100%; width:480px; border-radius:10px; border:1px solid var(--border);
+    max-width:100%; width:480px; border-radius:10px; border:1px solid var(--ds-border);
     box-shadow:0 2px 14px rgba(0,0,0,.10); background:#000;
   }
   .demo-segs{font-size:.93rem;}
   .demo-segs-t{font-weight:600; margin:.2rem 0 .45rem;}
   .demo-segs ol{margin:.2rem 0 .6rem; padding-left:1.6rem;}
   .demo-segs li{margin:.4rem 0;}
-  .demo-note{color:var(--muted); font-size:.86rem; margin-top:.5rem;}
-  .loading{color:var(--muted); font-style:italic;}
-  .err{color:#dc3545;}
-  footer{margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
-    color:var(--muted); font-size:.82rem; text-align:center;}
-  @media(max-width:600px){ .wrap{padding:1.4rem 1rem 3rem;} header.site h1{font-size:1.35rem;} }
+  .demo-note{color:var(--ds-muted); font-size:.86rem; margin-top:.5rem;}
+  .mermaid-slot{text-align:center; margin:1.6rem 0; overflow-x:auto;}
+  .mermaid-slot svg{max-width:100%; height:auto;}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="site">
-    <h1>视觉扩散策略的压缩与边缘部署</h1>
-    <div class="sub">HomeBot-WM 主线实验报告 · Diffusion Policy (image Push-T, 262M) → Jetson AGX Orin</div>
+  <header class="ds-header">
+    <div class="ds-header__inner">
+      <div class="ds-header__top">
+        <a class="ds-home" href="https://ranpin.github.io/">← 返回主页</a>
+        <span class="ds-badge">🤖 智能机器人 / 具身智能</span>
+      </div>
+      <h1>视觉扩散策略的压缩与边缘部署</h1>
+      <p class="ds-header__sub">HomeBot-WM 主线实验报告 · Diffusion Policy (image Push-T, 262M) → Jetson AGX Orin</p>
+    </div>
   </header>
-  <nav class="tabs">
-    <button data-doc="DEMO" class="active">Demo</button>
-    <button data-doc="README">报告</button>
-    <button data-doc="METHODOLOGY">方法</button>
-    <button data-doc="PROBLEMS">问题记录</button>
-    <a class="back" href="https://ranpin.github.io/edge-ai-docs/#robot">← 返回技术文档</a>
-    <a class="gh" href="https://github.com/ranpin/homebot-wm/tree/main/docs/compression" target="_blank" rel="noopener">GitHub 源 ↗</a>
-  </nav>
-  <div class="content" id="content"><p class="loading">加载中…</p></div>
-  <footer>载体任务 Push-T 为 2D 仿真 · 精度为 pymunk 闭环 mean_score (n=50) · Orin 实测：DDIM-16 FP16=12Hz / INT8=18Hz；TRT 原生 INT8 闭环比 FP16 掉 ~0.12 (p&lt;0.001)</footer>
-</div>
+
+  <div class="ds-wrap">
+    <nav class="ds-nav">
+      <button class="ds-tab active" data-doc="DEMO">Demo</button>
+      <button class="ds-tab" data-doc="README">报告</button>
+      <button class="ds-tab" data-doc="METHODOLOGY">方法</button>
+      <button class="ds-tab" data-doc="PROBLEMS">问题记录</button>
+      <span class="ds-nav__spacer"></span>
+      <a class="ds-navlink" href="https://ranpin.github.io/edge-ai-docs/#robot">← 返回技术文档</a>
+      <a class="ds-navlink" href="https://github.com/ranpin/homebot-wm/tree/main/docs/compression" target="_blank" rel="noopener">GitHub 源 ↗</a>
+    </nav>
+
+    <div class="ds-content" id="content"><p class="ds-loading">加载中…</p></div>
+
+    <footer class="ds-footer">载体任务 Push-T 为 2D 仿真 · 精度为 pymunk 闭环 mean_score (n=50) · Orin 实测：DDIM-16 FP16=12Hz / INT8=18Hz；TRT 原生 INT8 闭环比 FP16 掉 ~0.12 (p&lt;0.001)</footer>
+  </div>
 
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
@@ -104,7 +66,7 @@
 
   const GH_BASE = 'https://github.com/ranpin/homebot-wm/tree/main/docs/compression/';
   const content = document.getElementById('content');
-  const buttons = [...document.querySelectorAll('nav.tabs button')];
+  const buttons = [...document.querySelectorAll('.ds-nav .ds-tab')];
 
   function switchTab(doc){
     buttons.forEach(b=>b.classList.toggle('active', b.dataset.doc===doc));
@@ -144,14 +106,14 @@
       window.scrollTo({top:0, behavior:'smooth'});
       return;
     }
-    content.innerHTML = '<p class="loading">加载中…</p>';
+    content.innerHTML = '<p class="ds-loading">加载中…</p>';
     let md;
     try{
       const res = await fetch('compression/'+doc+'.md', {cache:'no-store'});
       if(!res.ok) throw new Error('HTTP '+res.status);
       md = await res.text();
     }catch(e){
-      content.innerHTML = '<p class="err">加载 '+doc+'.md 失败：'+e.message+
+      content.innerHTML = '<p class="ds-err">加载 '+doc+'.md 失败：'+e.message+
         '（本地直接打开 index.html 会因 file:// 跨域失败，请通过 GitHub Pages 或本地 http 服务访问）</p>';
       return;
     }
@@ -184,7 +146,7 @@
         const {svg} = await mermaid.render('mmd-'+doc+'-'+i, codes[i]);
         slot.innerHTML = svg;
       }catch(e){
-        slot.innerHTML = '<p class="err">[mermaid 渲染失败: '+e.message+']</p>';
+        slot.innerHTML = '<p class="ds-err">[mermaid 渲染失败: '+e.message+']</p>';
       }
     }
     window.scrollTo({top:0, behavior:'smooth'});
