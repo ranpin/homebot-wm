@@ -12,6 +12,7 @@
 | `results/ddpm50_seed1.json` | FP32 DDPM-50 n=50 seed1（崩溃复测） |
 | `results/step_sweep_onnx.json` | FP32 DDIM 步数曲线 n=10（**已被 n50 推翻，仅留档**） |
 | `results/int8_n50.json` | INT8 闭环 n=50（FP32/A/C 配对对照） |
+| `results/orin_latency.json` | **Orin 实测延迟**（trtexec 引擎级 + 全墙钟 sweep + diag 分解；2026-10-19，dog） |
 
 ## 复现
 
@@ -34,8 +35,8 @@
 | ONNX INT8 per_channel（C） | 11 MB + 278 MB | pc-3070 `onnx_export_int8_pc/` | 否 | **是**（同上 + `--per_channel --op_types Conv`） |
 | 结果 JSON | <1 KB 各 | **本目录 `results/`** | **是** | — |
 | 评测/训练日志 | 数 MB | pc-3070 `*.log` | 否 | 是（重跑） |
-| TensorRT 引擎 | — | **未构建** | — | 待 Orin（`build_trt.py`） |
+| TensorRT 引擎（FP16+INT8 ×2） | 12.7–506 MB 各 | dog `/home/vision/homebot_wm/engines/` | 否（架构/版本绑定） | **是**（`build_trt_calib.py` + `gen_calib_data.py`，Orin 上几分钟） |
 
-**单点风险**：训练 checkpoint（4GB）只在 pc-3070，丢了需重训 ~7h（8GB GPU）。ONNX/INT8 均可从 checkpoint 重建。TensorRT 引擎尚未构建（需 Orin）。
+**单点风险**：训练 checkpoint（4GB）只在 pc-3070，丢了需重训 ~7h（8GB GPU）。ONNX/INT8 均可从 checkpoint 重建。TensorRT 引擎在 dog（架构/版本绑定，不入 git），可从 FP32 ONNX + 校准数据用 `build_trt_calib.py` 在 Orin 上重建。
 
 **归档说明**：结果 JSON（小、关键）已入库供公开复现；大文件（checkpoint/ONNX/引擎）gitignore，留 pc-3070，需要时按上表命令重建。SHA256 未逐一记录（产物可重建，非唯一真源）。

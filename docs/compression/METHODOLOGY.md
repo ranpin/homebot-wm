@@ -41,18 +41,22 @@
 
 **校准的已知局限**：UNet 校准用 randn sample + 均匀 timestep，覆盖高噪声区；更精确应按 timestep 用 forward-diffuse 的真实动作（`scheduler.add_noise`）。当前配置下 INT8 已精度无损，未进一步精修。
 
+**两条 INT8 路线（口径不同、数据相同）**：上面的 onnxruntime QDQ 路线用于 **CPU 精度验证**（表 1/2 闭环）；Orin 部署用 **TRT 原生校准**（`IInt8EntropyCalibrator2`，`build_trt_calib.py`）从 FP32 ONNX 直接建引擎——因为 TRT 无法解析 onnxruntime QDQ 产出的 INT32 zero-point DequantizeLinear。两路共用同一校准分布（128 真实观测，`gen_calib_data.py` 生成）。**精度结论来自 onnxruntime 路线，Orin 延迟来自 TRT 路线**（见表 4 + README 诚实边界）。
+
 ## 4. 指标定义
 
 - **mean_score**：Push-T 闭环成功率指标 = T 形块对目标区的**覆盖率**（0–1，连续），n 个 episode 取均值。**非二值成功**。由 `PushTImageRunner.run()` 返回 `test/mean_score`。
 - **parity（max_abs_diff）**：ONNX 输出 vs PyTorch 输出的最大绝对差，`np.allclose(atol=1e-4)` 判过。
 - **INT8-vs-FP32 diff**：同输入下 INT8 ONNX 与 FP32 ONNX 输出的最大绝对差（单步，非闭环）。
 - **UNet 调用/预测**：每次 `predict_action` 的 UNet 前向次数 = num_inference_steps（视觉编码器恒 1×）。
+- **引擎级延迟（trtexec GPU compute time）**：单个引擎一次前向的 GPU 执行时间，**不含** host 编排/传输。`--useCudaGraph` 给的是理论地板（图捕获消除 kernel launch 开销），裸测（plain）含 launch 开销。
+- **全墙钟（predict_action wall-clock）**：完整 `predict_action`（encoder×1 + unet×N + host 端 numpy DDIM 步进 + H2D/D2H）的墙钟时间，由 `bench_predict_action.py`（ctypes + libcudart）实测。**这才是部署延迟口径**；引擎级 ×N 之和会低估它（差 host 编排 + Python 开销，且 Python 循环用不了 cudaGraph）。
 
-**绝对 vs 相对口径**：mean_score 是绝对覆盖率；「−8 分」是相对 DDPM-100 基线的绝对差。同 harness（ONNX CPU）内的对照才可比；训练时 PyTorch eval（0.876）是跨 harness 参考，不直接比。
+**绝对 vs 相对口径**：mean_score 是绝对覆盖率；「−8 分」是相对 DDPM-100 基线的绝对差。同 harness（ONNX CPU）内的对照才可比；训练时 PyTorch eval（0.876）是跨 harness 参考，不直接比。**延迟同理**：引擎级（trtexec）与全墙钟（bench_predict_action）是两个口径，不可混用——表 4 同时给出并标明差异来源。
 
 ## 5. 确切命令
 
-所有命令在 pc-3070 `/data/tmp/chenrunbin/diffusion_policy`，`export PYTHONPATH=$PWD`，venv `./dp_venv/bin/python`。
+CPU 侧命令在 pc-3070 `/data/tmp/chenrunbin/diffusion_policy`（`export PYTHONPATH=$PWD`，venv `./dp_venv/bin/python`）；Orin 部署命令在 dog `/home/vision/homebot_wm`（系统 `python3` + TensorRT 10.7，无 torch，设备内存走 ctypes+libcudart）。
 
 ```bash
 # 训练载体模型（8GB GPU）
@@ -77,15 +81,33 @@ python eval_onnx_pusht.py --checkpoint <ckpt> --int8_dir onnx_export_int8_pc \
 python step_sweep_onnx.py --checkpoint <ckpt> --scheduler ddim --steps 50,16,5 --n_test 50
 python step_sweep_onnx.py --checkpoint <ckpt> --scheduler ddpm --steps 50 --n_test 50 --seed 1
 
-# TensorRT 引擎构建（必须在 Orin 上跑，引擎不跨架构）—— 待执行
-python build_trt.py --onnx_dir onnx_export --int8_dir onnx_export_int8_pc \
-    --out_dir trt_engines --precisions fp16,int8 --benchmark
+# ---- TensorRT / Orin 部署（引擎不跨架构，必须在 Orin 上构建）----
+# ⚠️ TRT 无法解析 onnxruntime QDQ 的 INT32 zero-point DequantizeLinear，故 Orin INT8
+#    改用 TRT 原生校准（IInt8EntropyCalibrator2）从 FP32 ONNX 直接建引擎；与 CPU 侧 QDQ
+#    共用同一校准分布（128 真实观测），两条路线口径不同、数据相同。build_trt.py 的
+#    QDQ-INT8 路径因此弃用，只保留其 FP16 路径。
+
+# ① pc-3070：生成 TRT 校准数据（.npy，供 Orin 侧 ctypes 校准器读，Orin 无 torch）
+./dp_venv/bin/python gen_calib_data.py --checkpoint <ckpt> --n_calib 128 --out_dir calib_data
+#    再 scp calib_data/ + onnx_fp32/（FP32 ONNX）到 dog:/home/vision/homebot_wm
+
+# ② dog（Orin）：建 INT8 引擎（TRT 原生校准）+ FP16 引擎
+python3 build_trt_calib.py --onnx_dir onnx_fp32 --calib_dir calib_data --out_dir engines --which both
+python3 -c "from build_trt import build_engine; build_engine('onnx_fp32/unet.onnx','engines/unet_fp16.engine','fp16')"
+
+# ③ dog：引擎级延迟（trtexec GPU compute time；--useCudaGraph 给的是理论地板）
+/usr/src/tensorrt/bin/trtexec --loadEngine=engines/unet_int8.engine \
+    --shapes=sample:1x16x2,timestep:1,global_cond:1x132 --useCudaGraph --iterations=200
+
+# ④ dog：全 predict_action 墙钟（ctypes 真实 DDIM 循环；--diag 分解 --tight 紧循环对照）
+python3 bench_predict_action.py --unet unet_int8 --enc obs_encoder_fp16 --steps 50 --iters 20 --warmup 5 --diag --tight
 ```
 
 ## 6. 环境与版本（实测）
 
-**硬件**：pc-3070 = NVIDIA RTX 3070 8GB（sm_86），16 核，**15GB RAM**，CUDA 12.4 驱动 550.144.03。
-**⚠️ GPU 于 2026-10-10 硬件故障**（`nvidia-smi` → `Unknown Error`），训练死于 epoch 241；**压缩全程在 CPU 完成**（ONNX 导出 / INT8 / 闭环评测均不需 GPU）。恢复需 root（无 sudo）。
+**硬件**：
+- **pc-3070** = NVIDIA RTX 3070 8GB（sm_86），16 核，**15GB RAM**，CUDA 12.4 驱动 550.144.03。**⚠️ GPU 于 2026-10-10 硬件故障**（`nvidia-smi` → `Unknown Error`），训练死于 epoch 241；**压缩全程在 CPU 完成**（ONNX 导出 / INT8 / 闭环评测均不需 GPU）。恢复需 root（无 sudo）。
+- **dog（Orin）** = Jetson AGX Orin，JetPack 6.x，**TensorRT 10.7**（`/usr/src/tensorrt/bin/trtexec`），系统 python3 + numpy（**无 torch/pycuda/cuda-python**，设备内存走 ctypes+libcudart）。统一内存与 `/opt/agentcore` 的 system_agent 共享（常驻 ~26.5GB）→ 延迟测量 run 间方差 ±7%，取 median、warmup≥5。
 
 **软件**（`dp_venv`，Python 3.10）：
 
@@ -112,5 +134,7 @@ python build_trt.py --onnx_dir onnx_export --int8_dir onnx_export_int8_pc \
 | DDIM 步数曲线（n=50） | 1 | 同种子 |
 | DDPM-50 崩溃 | **2 种子**（0.558/0.490） | 已复测确认 |
 | n=10 vs n=50 差异 | 2 | 已确认 n=10 不可信 |
+| Orin unet INT8 提速（引擎级） | **2 测法**（裸测 / cudaGraph） | 一致（1.6×/1.79×） |
+| Orin 全墙钟 DDIM-50 INT8 | diag 分解 + tight 紧循环对照 | 账目闭合（SUM=143ms ≈ 墙钟） |
 
-**run-to-run 方差**：DDPM-50 两种子差 ~7 分（0.558 vs 0.490），反映坏采样器的高方差；DDIM/INT8 各配置为确定性（同种子复现到小数点后 4 位，已用 ddim16 验证 harness 确定性）。
+**run-to-run 方差**：DDPM-50 两种子差 ~7 分（0.558 vs 0.490），反映坏采样器的高方差；DDIM/INT8 各配置为确定性（同种子复现到小数点后 4 位，已用 ddim16 验证 harness 确定性）。**Orin 延迟**：dog GPU 与 system_agent 共享 → run 间 ±7%，取 median、warmup≥5（冷启动曾虚高到 296ms，是假象）。

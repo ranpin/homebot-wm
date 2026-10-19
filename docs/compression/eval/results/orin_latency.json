@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "date": "2026-10-19",
+    "device": "dog (30.245.40.99), Jetson AGX Orin, JetPack 6.x, TensorRT 10.7",
+    "batch": 1,
+    "engines": "TRT native INT8 calibration (build_trt_calib.py, IInt8EntropyCalibrator2, 128 real obs); FP32 ONNX -> obs_encoder/unet x FP16/INT8",
+    "variance_note": "dog GPU shared with system_agent -> run-to-run ~7%; report median, warmup>=5 (cold start once inflated DDIM-50 to 296ms = artifact)"
+  },
+  "engine_level_trtexec_gpu_compute_ms": {
+    "plain": {
+      "unet_fp16": 3.949, "unet_int8": 2.426,
+      "obs_encoder_fp16": 0.754, "obs_encoder_int8": 0.858
+    },
+    "cudaGraph_200it": {
+      "unet_fp16": 3.520, "unet_int8": 1.963,
+      "obs_encoder_fp16": 0.521, "obs_encoder_int8": 0.616
+    },
+    "note": "unet INT8 1.6-1.8x faster (bottleneck, xN steps); obs_encoder INT8 SLOWER (11M + InstanceNorm->FP16 fallback reformat)"
+  },
+  "wall_clock_predict_action_ms": {
+    "harness": "bench_predict_action.py (ctypes+libcudart, real DDIM loop w/ host numpy step + H2D/D2H), warmup=5 iters=20",
+    "unet_fp16+enc_fp16": {
+      "ddim50": {"mean": 239.41, "median": 238.30, "min": 237.31, "max": 245.40, "hz": 4.2},
+      "ddim16": {"mean": 84.75, "median": 83.01, "min": 77.54, "max": 108.47, "hz": 11.8},
+      "ddim5":  {"mean": 31.98, "median": 31.44, "min": 26.46, "max": 42.18, "hz": 31.3}
+    },
+    "unet_int8+enc_fp16": {
+      "ddim50": {"mean": 152.31, "median": 147.48, "min": 141.33, "max": 192.39, "hz": 6.6},
+      "ddim16": {"mean": 56.78, "median": 55.00, "min": 49.31, "max": 71.58, "hz": 17.6},
+      "ddim5":  {"mean": 30.47, "median": 29.84, "min": 27.95, "max": 33.73, "hz": 32.8}
+    },
+    "unet_int8+enc_int8": {
+      "ddim50": {"mean": 147.68, "median": 142.15, "min": 141.35, "max": 185.63, "hz": 6.8}
+    },
+    "note": "end-to-end INT8 speedup 1.6x@ddim50, 1.5x@ddim16, ~1.0x@ddim5 (fixed overhead dominates at low steps); encoder precision irrelevant end-to-end (runs x1)"
+  },
+  "diag_breakdown_ddim50_unet_int8_ms": {
+    "enc_h2d": 0.16, "enc_run": 0.97, "enc_d2h": 0.16,
+    "step_h2d_total": 3.60, "step_run_total": 132.46, "step_d2h_total": 3.79, "step_numpy_total": 2.24,
+    "per_step": {"h2d": 0.072, "run": 2.649, "d2h": 0.076, "numpy": 0.045},
+    "sum": 143.38,
+    "note": "engine exec 93% / orchestration 7%; tight back-to-back unet loop = 2.671 ms/exec (trtexec plain 2.43 + Python ~0.22)"
+  },
+  "key_correction": "trtexec cudaGraph engine-sum (50x1.96+0.52~98.5ms -> '10.1Hz @ DDIM-50') is an UNREALISTIC floor: a Python DDIM loop cannot use cudaGraph (host numpy step breaks capture). Real wall-clock DDIM-50 = 147ms/6.8Hz, does NOT cross 10Hz; 10Hz crossed only at DDIM-16 (18Hz)."
+}

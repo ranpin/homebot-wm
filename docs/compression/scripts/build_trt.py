@@ -92,7 +92,7 @@ def build_engine(onnx_path, engine_path, precision, workspace_gb=4.0,
     with open(engine_path, "wb") as f:
         f.write(serialized)
     print(f"  built {engine_path.name}  precision={precision}  "
-          f"{len(serialized)/1e6:.1f} MB  ({time.time()-t0:.0f}s)")
+          f"{serialized.nbytes/1e6:.1f} MB  ({time.time()-t0:.0f}s)")
     return engine_path
 
 

@@ -92,10 +92,16 @@ Diffusion Policy 是 2023 年仓库，依赖钉死在老版本，与 2026 环境
 - **解决**：可靠比较只用同 harness 内的对照；跨 harness 的 0.876 仅作参考。
 - **教训**：跨 harness/跨 seed 的绝对分数不可直接比；对照必须同 harness 同 seed。
 
-## 阶段 5 · 待办（硬件阻塞）
+## 阶段 5 · Orin 部署（2026-10-19 闭合）
 
-### P14 · TensorRT/Orin 未实测
+### P14 · TensorRT/Orin 未实测 → 已闭合
 - **现象**：`build_trt.py` 已就绪但无法实测（GPU 故障 + 引擎不跨架构，必须在 Orin 构建）。
 - **根因**：TensorRT 引擎架构/版本绑定；本机无 TensorRT 且 GPU 故障。
-- **解决**：待 Orin 可用后跑 `build_trt.py --benchmark`。
-- **教训**：引擎类产物不跨架构，构建必须在目标机；脚本里已注明 int64 timestep 可能需在导出时转 int32。
+- **解决（2026-10-19，dog 上闭合）**：TRT 原生 INT8 校准建 4 引擎 + trtexec 引擎级 + ctypes 全墙钟基准，延迟结果见 README 表 4。
+- **教训**：引擎类产物不跨架构，构建必须在目标机。
+
+### P15 · 引擎级 cudaGraph 地板 ≠ 全墙钟（一次过度声称的纠错）
+- **现象**：早先把 trtexec cudaGraph 引擎和（50×1.96+0.52≈98.5ms）当成部署延迟，报成「DDIM-50+INT8 = 10.1Hz，跨过 10Hz 控制环门槛」。
+- **根因**：cudaGraph 引擎和是**理论地板**——假设 CUDA 图捕获 + 零编排开销。真实 Python DDIM 循环用不了 cudaGraph（host 端 numpy 步进打断图捕获），每步实际 ~2.65ms（plain exec 2.43 + Python 0.22）而非 1.96ms，再加 ~21ms 编排开销（h2d/d2h/numpy/encoder）。`bench_predict_action.py` 全墙钟实测 **147ms / 6.8Hz，不过 10Hz**。
+- **解决**：ctypes 全墙钟基准 + `--diag` 分解（引擎执行占 93%、编排占 7%，SUM=143ms 闭合）+ `--tight` 紧循环对照（2.67ms/exec ≈ trtexec plain 2.43 + Python）。纠正为「10Hz 门槛只在 DDIM-16（18Hz）跨过，DDIM-50 仅 6.8Hz」。
+- **教训**：**部署延迟必须测全墙钟，引擎级 ×N 之和会系统性低估**；cudaGraph 地板只能当理论下界、不能当部署声称。附带：冷启动（warmup 不足）曾把 DDIM-50 虚高到 296ms，是假象非真实——warmup≥5、取 median（dog GPU 与 system_agent 共享，run 间 ±7%）。

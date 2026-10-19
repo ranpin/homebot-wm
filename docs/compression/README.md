@@ -8,15 +8,15 @@
 
 ## 摘要
 
-本项目将一个**视觉扩散策略**（Diffusion Policy 的 image Push-T 变体，262M 参数：251.5M 扩散 UNet + 11.2M 视觉编码器）在单张 **8GB RTX 3070** 上从头训练到 **87.6%**（DDPM-100，n=50），随后系统性地压缩并为 Jetson Orin 部署做准备。三个压缩杠杆**全部在 CPU 上完成量化验证**（实验期间 GPU 硬件故障，但 ONNX 导出 / INT8 PTQ / 闭环评测均不依赖 GPU）：
+本项目将一个**视觉扩散策略**（Diffusion Policy 的 image Push-T 变体，262M 参数：251.5M 扩散 UNet + 11.2M 视觉编码器）在单张 **8GB RTX 3070** 上从头训练到 **87.6%**（DDPM-100，n=50），随后系统性地压缩、部署到 **Jetson AGX Orin** 并完成全墙钟实测。三个压缩杠杆**全部在 CPU 上完成量化验证**（压缩期间 3070 GPU 硬件故障，但 ONNX 导出 / INT8 PTQ / 闭环评测均不依赖 GPU），部署环最终在 Orin 上闭合：
 
 1. **ONNX 导出**——拆成 `obs_encoder` + `unet` 两组件，FP32 数值 parity 达 **1.4×10⁻⁶**；
 2. **INT8 静态量化（PTQ）**——n=50 下**精度无损**（FP32 0.738 / INT8 0.767–0.788，统计不可分），模型 960MB→241MB（~4×）；
 3. **扩散步数压缩**——确认 **DDIM 是唯一可行的减步采样器**（DDPM 抽稀到 50 步即崩溃至 ~0.5，两种子复现），DDIM-50 精度甚至略超 DDPM-100。
 
-**推荐部署配置：DDIM-50 + INT8**——相对原始 DDPM-100 **提速 2× 且精度不降**（0.814 vs 0.787）；激进配置 **DDIM-5 + INT8 提速 20×、精度 −8 分**（0.725）。TensorRT 引擎构建脚本已就绪，待在 Orin 上实测延迟。
+**推荐部署配置（Orin 全墙钟实测）**：要进 10Hz 控制环用 **DDIM-16 + INT8 = 55ms / 18Hz**（精度 0.738）；要最高精度用 **DDIM-50 + INT8 = 147ms / 6.8Hz**（精度 0.814，但不过 10Hz）。INT8 相对 FP16 在 Orin 上端到端提速 1.6×（unet 引擎级 1.6–1.8×）。部署环已闭合：TRT 原生 INT8 校准建引擎 + ctypes 全墙钟基准（详见表 4）。
 
-**诚实定位**：载体任务 Push-T 是 2D 玩具（非真机械臂），但压缩→部署的方法链与任务无关；所有精度数字为 pymunk 仿真闭环 `mean_score`（目标区覆盖率，0–1），非真机。TensorRT/Orin 实测尚未完成（GPU 故障 + 引擎不跨架构）。
+**诚实定位**：载体任务 Push-T 是 2D 玩具（非真机械臂），但压缩→部署的方法链与任务无关；所有精度数字为 pymunk 仿真闭环 `mean_score`（目标区覆盖率，0–1），非真机。Orin 延迟是**全墙钟实测**（ctypes 基准，非引擎级推算）——引擎级 cudaGraph 地板会更乐观（~10Hz@DDIM-50），但真实 Python 部署循环用不了 cudaGraph，实测 6.8Hz；这个口径差异已诚实纠正（见表 4 + PROBLEMS P15）。
 
 ---
 
@@ -87,19 +87,19 @@ flowchart TD
     Q5 --> E5["E5: DDPM-50 两种子<br/>(§核心结果·采样器)"]
     E5 --> R5["✗ 崩到 0.49-0.56<br/>DDPM 不能减步"]
     R5 -->|"采样器定了, 上硬件"| Q6["Q6: TensorRT/Orin?"]
-    Q6 --> E6["E6: build_trt.py 就绪"]
-    E6 --> R6["⏳ 待 Orin 实测<br/>(GPU 故障+引擎不跨架构)"]
+    Q6 --> E6["E6: TRT 原生 INT8 校准建引擎<br/>+ ctypes 全墙钟基准<br/>(§核心结果·表4)"]
+    E6 --> R6["✓ Orin 全墙钟实测<br/>DDIM-16=18Hz, DDIM-50=6.8Hz"]
 
     style R3a fill:#f8d7da,stroke:#dc3545
     style R5 fill:#f8d7da,stroke:#dc3545
-    style R6 fill:#d1ecf1,stroke:#17a2b8
     style R1 fill:#d4edda,stroke:#28a745
     style R2 fill:#d4edda,stroke:#28a745
     style R3b fill:#d4edda,stroke:#28a745
+    style R6 fill:#d4edda,stroke:#28a745
 ```
 
-**读法**：一行一轮，问题→实验(章节)→结论；红=被证否/失败分支，绿=通过，蓝=待硬件。
-**分析**：链条的主干是「训练→导出→量化→减步→部署」；E3a→E3b 是一次**自我纠错**（n=10 噪声推翻了 n=10 结论），E5 排除了 DDPM 减步这条岔路。
+**读法**：一行一轮，问题→实验(章节)→结论；红=被证否/失败分支，绿=通过。
+**分析**：链条的主干是「训练→导出→量化→减步→部署」，E6 在 Orin 上闭合了部署环；E3a→E3b 是一次**自我纠错**（n=10 噪声推翻了 n=10 结论），E5 排除了 DDPM 减步这条岔路，E6 的墙钟基准又纠正了「引擎级 cudaGraph 地板」的乐观估计（见表 4 + PROBLEMS P15）。
 
 ### 表 1 · 采样器 × 步数（FP32 ONNX，n=50，同 env/噪声种子）
 
@@ -137,6 +137,37 @@ flowchart TD
 
 **结果**：同一配置，n=10 与 n=50 差 **21 分**。
 **分析**：Push-T 单 episode 覆盖率方差大，n=10 的均值噪声带达 ±0.05（Wilson）。**所有结论性数字一律用 n=50**；n=10 仅用于冒烟。这是本项目最重要的方法论教训（详见 PROBLEMS P5）。
+
+### 表 4 · Orin 实测延迟（Jetson AGX Orin，TensorRT 10.7，batch=1）
+
+部署环在 Orin（dog）上闭合：TRT 原生 INT8 校准（`IInt8EntropyCalibrator2`，128 真实观测）从 FP32 ONNX 建出 4 个引擎，再测延迟。**两个口径务必分清**——引擎级（trtexec 单引擎 GPU compute，不含编排）与全墙钟（`bench_predict_action.py`，ctypes 跑完整 `predict_action` = encoder×1 + unet×N + host 端 numpy DDIM 步进 + H2D/D2H）。
+
+**表 4a · 单组件引擎级延迟（trtexec GPU compute，ms，--useCudaGraph + 200 iters）**
+
+| 组件 | 角色 | FP16 | INT8 | INT8 vs FP16 |
+|---|---|---|---|---|
+| unet | 瓶颈，每次预测跑 ×N 步 | 3.52 | 1.96 | **快 1.79×** |
+| obs_encoder | 每次预测跑 ×1 | 0.52 | 0.62 | 慢 0.85× |
+
+不带 cudaGraph 的裸测：unet FP16 3.95 / INT8 2.43，encoder FP16 0.75 / INT8 0.86——结论一致（unet INT8 快 1.6×，encoder INT8 更慢）。
+
+**表 4b · 全 predict_action 墙钟（median，warmup=5 iters=20；精度取自表 1，INT8 无损见表 2）**
+
+| 配置 | DDIM 步数 | 精度 (n50) | 墙钟 (ms) | 吞吐 (Hz) | 过 10Hz |
+|---|---|---|---|---|---|
+| 全 FP16 | 50 | 0.814 | 238 | 4.2 | ✗ |
+| 全 FP16 | 16 | 0.738 | 83 | 12.0 | ✓ |
+| 全 FP16 | 5 | 0.725 | 31 | 31.8 | ✓ |
+| **unet-INT8 + enc-FP16** | 50 | 0.814 | **147** | **6.8** | ✗ |
+| **unet-INT8 + enc-FP16** | 16 | 0.738 | **55** | **18.2** | ✓ |
+| **unet-INT8 + enc-FP16** | 5 | 0.725 | **30** | **33.5** | ✓ |
+
+**横轴**：部署配置（精度 × DDIM 步数）。**竖轴**：全 `predict_action` 墙钟延迟（ms）与吞吐（Hz）；精度 = pymunk 闭环 mean_score（0–1，n=50）。
+**结果**：INT8 端到端提速 DDIM-50 时 1.6×、DDIM-16 时 1.5×、DDIM-5 时 ~1.0×（低步数下收益消失——unet 只跑 5 次时固定开销主导）。**10Hz 控制环门槛只在 DDIM-16（18Hz）或 DDIM-5（33Hz）跨过；DDIM-50（精度最高 0.814）仅 6.8Hz、不过 10Hz。**
+**分析**：
+- **引擎级 ≠ 全墙钟（一次诚实纠错，详见 PROBLEMS P15）**：trtexec cudaGraph 引擎和（50×1.96+0.52≈98.5ms）会暗示 DDIM-50 可达 10.1Hz，但那是**不现实地板**——真实 Python DDIM 循环用不了 cudaGraph（host 端 numpy 步进打断图捕获），每步实际 ~2.65ms（plain exec 2.43 + Python 0.22），再加 ~21ms 编排开销（h2d/d2h/numpy/encoder），实测 147ms / 6.8Hz。账目经 diag 分解验证（引擎执行占 93%，编排占 7%）。
+- **encoder INT8 反而更慢**（表 4a）：11M 小模型 + 大量 InstanceNorm 层被 TRT 自动回退 FP16，INT8↔FP16 reformat 开销盖过算力节省。但 encoder 只跑 ×1，端到端无差别（all-INT8 DDIM-50 = 142ms ≈ 混合 147ms）；按组件仍部署 FP16 encoder。
+- **口径边界**：墙钟为 Python 部署循环（ctypes + libcudart，Orin 无 torch）；C++ 部署 + cudaGraph + 片上 DDIM 理论上可逼近引擎级地板（~10Hz@DDIM-50），但**未实现未测，不作声称**。dog GPU 与 system_agent 共享 → run 间方差 ±7%，故取 median、warmup≥5（冷启动曾虚高到 296ms，是假象非真实）。
 
 ---
 
@@ -182,15 +213,17 @@ flowchart TD
 
 ### 选型与结论
 
-1. **INT8 量化是免费的**：对该扩散策略，INT8 PTQ（per_tensor 或 per_channel）在 n=50 下与 FP32 统计不可分。这意味着 Orin 上可以直接用 INT8 拿 ~4× 体积压缩 + 加速，无需担心精度。
-2. **步数压缩必须走 DDIM**：DDPM 不能减步（抽稀即崩），DDIM 可以且优雅退化。DDIM-50 是甜点位（2× 加速、精度甚至略升）；DDIM-5 是极致（20× 加速、−8 分）。
-3. **推荐部署配置**：DDIM-50 + INT8（平衡）或 DDIM-5 + INT8（极致延迟）。
+1. **INT8 量化是免费的**：对该扩散策略，INT8 PTQ（per_tensor 或 per_channel）在 n=50 下与 FP32 统计不可分。这意味着 Orin 上可以直接用 INT8 拿 ~4× 体积压缩 + 端到端 1.6× 提速（表 4），无需担心精度。
+2. **步数压缩必须走 DDIM**：DDPM 不能减步（抽稀即崩），DDIM 可以且优雅退化。步数直接决定 UNet 调用次数（DDPM-100 的 100× → DDIM-50 的 50× → DDIM-5 的 5×），Orin 墙钟随之近似线性变化（表 4b）。
+3. **推荐部署配置（按 Orin 全墙钟，表 4b）**：要进 10Hz 控制环用 **DDIM-16 + INT8**（55ms / 18Hz，精度 0.738）；要最高精度、可接受 <10Hz 用 **DDIM-50 + INT8**（147ms / 6.8Hz，精度 0.814）；极致低延迟用 **DDIM-5 + INT8**（30ms / 33Hz，精度 0.725）。encoder 部署用 FP16（INT8 反而更慢，表 4a）。
 
 ### 反直觉发现（标注推断 vs 证明）
 
 - **DDPM-50 崩溃**（0.49–0.56，两种子）：*证明*——DDPM 反向链被抽稀破坏。这是 DDIM 存在的理由，符合理论。
 - **DDIM-50 > DDPM-100**（0.814 vs 0.787）：*观测到，机制为推断*——DDIM 确定性采样可能比 DDPM 随机采样在此任务上更稳定；未做严格消融，标注为合理推断。
 - **INT8 略高于 FP32**：*噪声，非真实效应*——n=50 配对差 +5/+2.9 分在 ±0.04 噪声带内，只解读为「无损」。
+- **encoder INT8 比 FP16 还慢**（表 4a，0.62 vs 0.52ms）：*证明（Orin 实测，裸测+cudaGraph 两法复测一致）*——encoder 仅 11M 且大量 InstanceNorm 层被 TRT 自动回退 FP16，INT8↔FP16 reformat 开销盖过 INT8 算力节省。**小模型 INT8 不一定快，要看层构成**；但 encoder 只跑 ×1，端到端无差别。
+- **引擎级 cudaGraph 地板 ≠ 全墙钟**（表 4，DDIM-50 的 10.1Hz vs 6.8Hz）：*证明（实测 + diag 分解）*——trtexec cudaGraph 引擎和是理论地板，真实 Python DDIM 循环用不了 cudaGraph（host 端 numpy 步进打断图捕获），每步实际 ~2.65ms 而非 1.96ms，再加 ~21ms 编排。**教训：部署延迟必须测全墙钟，不能只看引擎级**（见 PROBLEMS P15）。
 
 ### 能用来干什么
 
@@ -199,6 +232,6 @@ flowchart TD
 ### 诚实的边界
 
 - **载体任务是 2D 玩具**（Push-T 质点推方块），非真机械臂。压缩方法可迁移，但「87.6%」不代表真实操作能力。
-- **TensorRT/Orin 未实测**：引擎不跨架构，必须在 Orin 上构建；GPU 故障期间所有工作在 CPU 完成。Orin 延迟是最终交付的最后一环，尚未拿到。
+- **Orin 延迟已实测，但精度与延迟来自两条不同的 INT8 路径**：延迟（表 4）测自 Orin 的 TensorRT 原生 INT8 校准引擎；精度（表 1/2，0.814/0.738/0.725 与「INT8 无损」）测自 pc-3070 CPU 的 onnxruntime INT8 QDQ 闭环评测。两者都是同一模型的 INT8 PTQ，配对假设二者皆无损，但 **TRT 原生 INT8 引擎的闭环精度未单独复测**（只做了 action finite/范围 sanity）。严格起见应在 Orin 上用 TRT 引擎再跑一轮闭环评测。
+- **墙钟是 Python 部署循环**（ctypes + libcudart，Orin 无 torch），含 host 端 numpy DDIM 步进 + H2D/D2H；C++ 部署 + cudaGraph + 片上 DDIM 会更快（理论逼近引擎级地板 ~10Hz@DDIM-50），但未实现未测，不作声称。dog GPU 与 system_agent 共享，run 间方差 ±7%，取 median。
 - **ONNX DDPM-100（0.787）< 训练时 DDPM-100（0.876）**：跨 harness 差异（env 种子 n_envs 50 vs 56 + DDPM 随机性），非导出错误（FP32 parity 1.4e-6 已验证）。可靠比较是同 harness 内的 DDIM/DDPM 对照。
-- **INT8 是 onnxruntime CPU 量化**，非 TensorRT INT8；TensorRT 原生支持 per-channel，预期行为类似，但终值待 Orin 验证。

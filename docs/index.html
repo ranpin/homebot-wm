@@ -95,7 +95,7 @@
     <a class="gh" href="https://github.com/ranpin/homebot-wm/tree/main/docs/compression" target="_blank" rel="noopener">GitHub 源 ↗</a>
   </nav>
   <div class="content" id="content"><p class="loading">加载中…</p></div>
-  <footer>载体任务 Push-T 为 2D 仿真 · 精度数字为 pymunk 闭环 mean_score (n=50) · TensorRT/Orin 实测待硬件</footer>
+  <footer>载体任务 Push-T 为 2D 仿真 · 精度数字为 pymunk 闭环 mean_score (n=50) · Orin 全墙钟实测：DDIM-16+INT8=18Hz / DDIM-50+INT8=6.8Hz</footer>
 </div>
 
 <script type="module">
@@ -115,7 +115,7 @@
     if(doc==='DEMO'){
       content.innerHTML =
         '<div class="demo-wrap">'+
-        '<p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，推荐部署配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>'+
+        '<p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，最高精度配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>'+
         '<div class="demo-task">'+
         '<p><b>任务 Push-T</b>：一个<b>质点 agent</b>（蓝色圆点）把 <b>T 形块</b>（灰色）推去与<b>目标轮廓</b>（绿色）对齐。coverage（覆盖率）= T 块与目标区的重叠比例（0–1），即本任务的 score，≥0.95 记成功。</p>'+
         '<p class="demo-warn">⚠ 画面里<b>没有机械臂 / 机器人本体</b>——Push-T 是 Diffusion Policy 的标准 2D 抽象基准，agent 是直接施力的质点。选它当载体是因为它轻量、能在 8GB 上从头训练，而本项目的交付物是<b>任务无关的压缩方法链</b>（ONNX→INT8→DDIM→TensorRT）。</p>'+
