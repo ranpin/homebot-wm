@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "date": "2026-10-19",
+    "device": "dog (30.245.40.99), Jetson AGX Orin, TensorRT 10.7, pymunk 7.3.1, gym 0.26.2",
+    "harness": "eval_trt_pusht.py (ctypes, standalone PushTImageEnv + MultiStepWrapper logic replicated, no torch)",
+    "config": "DDIM-50, n_test=50 (env seeds 10000-10049), enc=obs_encoder_fp16, unet=unet_fp16 vs unet_int8",
+    "noise": "torch.randn(1,16,2, generator=manual_seed(s)) for s in 0..5, baseline-matched (numpy noise gives ~0 -- Push-T closed-loop is chaotic/noise-implementation-sensitive, see PROBLEMS P16)",
+    "platform_caveat": "dog absolute scores below pc-3070 onnxruntime baseline (0.814) due to pymunk 7.3.1 vs 6.2.1 + chaotic amplification; INT8-vs-FP16 is same-platform paired, valid"
+  },
+  "per_seed": {
+    "0": {"fp16": 0.6247, "int8": 0.4949, "diff": -0.1298},
+    "1": {"fp16": 0.5995, "int8": 0.5477, "diff": -0.0518},
+    "2": {"fp16": 0.5682, "int8": 0.4220, "diff": -0.1462},
+    "3": {"fp16": 0.6108, "int8": 0.4407, "diff": -0.1701},
+    "4": {"fp16": 0.6369, "int8": 0.5042, "diff": -0.1327},
+    "5": {"fp16": 0.6164, "int8": 0.5252, "diff": -0.0912}
+  },
+  "summary": {
+    "fp16_mean": 0.6094,
+    "int8_mean": 0.4891,
+    "mean_diff": -0.1203,
+    "std_diff": 0.0423,
+    "se_diff": 0.0173,
+    "paired_t": -6.971,
+    "df": 5,
+    "p_value": "<0.001",
+    "relative_drop_pct": -19.7,
+    "all_6_diffs_negative": true,
+    "sign_test_one_tailed_p": 0.0156
+  },
+  "parity_context": {
+    "trt_int8_vs_fp16_single_step_eps_rel": "mean 4.5%, worst 13.5%",
+    "trt_int8_vs_fp16_full_action_rel": "mean 7.4%, worst 20%",
+    "trt_fp16_vs_onnxruntime_fp32_full_action_maxabs": 0.00125,
+    "note": "TRT FP16 engine matches onnxruntime FP32 (1.2e-3); TRT INT8 diverges ~7-9% from FP16, amplified by chaotic closed-loop into ~0.12 score drop"
+  },
+  "conclusion": "TRT native INT8 (entropy calibration) costs ~0.12 closed-loop accuracy vs FP16 on Orin (p<0.001, 6/6 seeds negative). Contrasts with onnxruntime QDQ INT8 (lossless on pc-3070). The two INT8 routes differ in quality; TRT INT8's ~7-9% action divergence is amplified by the chaotic + threshold Push-T dynamics."
+}

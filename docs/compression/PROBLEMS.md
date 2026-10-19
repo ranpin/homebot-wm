@@ -105,3 +105,11 @@ Diffusion Policy 是 2023 年仓库，依赖钉死在老版本，与 2026 环境
 - **根因**：cudaGraph 引擎和是**理论地板**——假设 CUDA 图捕获 + 零编排开销。真实 Python DDIM 循环用不了 cudaGraph（host 端 numpy 步进打断图捕获），每步实际 ~2.65ms（plain exec 2.43 + Python 0.22）而非 1.96ms，再加 ~21ms 编排开销（h2d/d2h/numpy/encoder）。`bench_predict_action.py` 全墙钟实测 **147ms / 6.8Hz，不过 10Hz**。
 - **解决**：ctypes 全墙钟基准 + `--diag` 分解（引擎执行占 93%、编排占 7%，SUM=143ms 闭合）+ `--tight` 紧循环对照（2.67ms/exec ≈ trtexec plain 2.43 + Python）。纠正为「10Hz 门槛只在 DDIM-16（18Hz）跨过，DDIM-50 仅 6.8Hz」。
 - **教训**：**部署延迟必须测全墙钟，引擎级 ×N 之和会系统性低估**；cudaGraph 地板只能当理论下界、不能当部署声称。附带：冷启动（warmup 不足）曾把 DDIM-50 虚高到 296ms，是假象非真实——warmup≥5、取 median（dog GPU 与 system_agent 共享，run 间 ±7%）。
+
+### P16 · Push-T 闭环混沌：噪声实现极敏感 + TRT 原生 INT8 闭环掉分
+- **现象 A（噪声敏感）**：闭环 harness 在 dog 上初跑得 ~0 分（FP16 应 ~0.8）。逐项排除引擎（TRT≈onnxruntime 到 1.2e-3）、env（初始态/图像逐像素同 pc-3070）、coverage（块放 goal 位姿 = 1.0）、harness 逻辑后，定位到**初始噪声实现**：我用 numpy `default_rng(0)`，基线用 torch `randn(seed0)`——同策略同 obs，仅换噪声实现，分数从 ~0 到 0.6。
+- **根因 A**：Push-T 闭环**混沌 + 有成功阈值**（coverage>0.95）。扩散初始噪声决定轨迹模式；阈值 + 混沌使任何扰动都系统性降分（把「本会成功」的轨迹踢出成功盆容易、反向难）。numpy 噪声恰落在「坏模式」。
+- **现象 B（INT8 掉分）**：TRT 原生 INT8 闭环比 FP16 低 ~0.12（6 噪声种子全负，paired t=−6.97，p<0.001），与表 2 的 onnxruntime QDQ INT8「无损」矛盾。
+- **根因 B**：TRT 原生熵校准 INT8 的 action 发散（~7-9%，parity 实测）大于 onnxruntime QDQ INT8，该发散被混沌闭环放大成 ~0.12 真实掉分。两条 INT8 路线质量不同。
+- **解决**：① 闭环必须用基线 torch.randn(seed) 噪声（pc-3070 生成 .npy 再 scp）；② INT8-vs-FP16 用 6 噪声种子配对消除噪声实现敏感性；③ 把「INT8 无损」纠正为「onnxruntime QDQ 无损、TRT 原生 INT8 闭环掉 ~0.12」。
+- **教训**：**部署精度必须在目标硬件闭环实测**——引擎级 parity 或 CPU 量化结果不能直接外推；混沌任务对扰动实现极敏感，对照实验必须配对扰动源（噪声种子）。

@@ -101,6 +101,19 @@ python3 -c "from build_trt import build_engine; build_engine('onnx_fp32/unet.onn
 
 # ④ dog：全 predict_action 墙钟（ctypes 真实 DDIM 循环；--diag 分解 --tight 紧循环对照）
 python3 bench_predict_action.py --unet unet_int8 --enc obs_encoder_fp16 --steps 50 --iters 20 --warmup 5 --diag --tight
+
+# ⑤ dog：TRT INT8 vs FP16 数值 parity（单步引擎级 + 全 50 步 action，无需 env）
+python3 parity_int8.py --n 64 --n_act 32 --steps 50
+
+# ⑥ dog：闭环精度（standalone PushTImageEnv + TRT 引擎，ctypes，无 torch）
+#    env 从 diffusion_policy 抽到 pusht_standalone/（import 改本地；pymunk>=7 删了
+#    add_collision_handler，它只填 info-only 的 n_contact_points、不参与 coverage reward，
+#    故 try/except 跳过无害）。
+#    ⚠️ 初始噪声必须用基线 torch.randn(seed)（pc-3070 生成 .npy 再 scp 过来）；numpy 噪声
+#    会得 ~0 分——Push-T 闭环混沌、对噪声实现极敏感（见 PROBLEMS P16）。
+python3 eval_trt_pusht.py --unet unet_fp16 --steps 50 --n_test 50 --init_noise torch_noise_seed0.npy
+python3 eval_trt_pusht.py --unet unet_int8 --steps 50 --n_test 50 --init_noise torch_noise_seed0.npy
+#    多噪声种子（0-5）各跑 FP16+INT8，配对 t 检验 → 表 5（INT8 掉 0.12，p<0.001）
 ```
 
 ## 6. 环境与版本（实测）
@@ -136,5 +149,6 @@ python3 bench_predict_action.py --unet unet_int8 --enc obs_encoder_fp16 --steps 
 | n=10 vs n=50 差异 | 2 | 已确认 n=10 不可信 |
 | Orin unet INT8 提速（引擎级） | **2 测法**（裸测 / cudaGraph） | 一致（1.6×/1.79×） |
 | Orin 全墙钟 DDIM-50 INT8 | diag 分解 + tight 紧循环对照 | 账目闭合（SUM=143ms ≈ 墙钟） |
+| Orin 闭环 INT8 vs FP16 | **6 噪声种子** × n=50 | paired t=-6.97, p<0.001, 6/6 全负 |
 
-**run-to-run 方差**：DDPM-50 两种子差 ~7 分（0.558 vs 0.490），反映坏采样器的高方差；DDIM/INT8 各配置为确定性（同种子复现到小数点后 4 位，已用 ddim16 验证 harness 确定性）。**Orin 延迟**：dog GPU 与 system_agent 共享 → run 间 ±7%，取 median、warmup≥5（冷启动曾虚高到 296ms，是假象）。
+**run-to-run 方差**：DDPM-50 两种子差 ~7 分（0.558 vs 0.490），反映坏采样器的高方差；DDIM/INT8 各配置为确定性（同种子复现到小数点后 4 位，已用 ddim16 验证 harness 确定性）。**Orin 延迟**：dog GPU 与 system_agent 共享 → run 间 ±7%，取 median、warmup≥5（冷启动曾虚高到 296ms，是假象）。**Orin 闭环精度**：Push-T 闭环混沌、对初始噪声实现极敏感（numpy 噪声 → ~0 分，torch 噪声 → 0.6），必须用基线 torch.randn(seed) 噪声；INT8-vs-FP16 用 6 个噪声种子配对以消除此敏感性（表 5）。

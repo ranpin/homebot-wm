@@ -13,6 +13,7 @@
 | `results/step_sweep_onnx.json` | FP32 DDIM 步数曲线 n=10（**已被 n50 推翻，仅留档**） |
 | `results/int8_n50.json` | INT8 闭环 n=50（FP32/A/C 配对对照） |
 | `results/orin_latency.json` | **Orin 实测延迟**（trtexec 引擎级 + 全墙钟 sweep + diag 分解；2026-10-19，dog） |
+| `results/orin_closedloop_int8.json` | **Orin 闭环精度** TRT INT8 vs FP16（6 噪声种子 × n=50，paired t=−6.97 p<0.001；2026-10-19，dog） |
 
 ## 复现
 

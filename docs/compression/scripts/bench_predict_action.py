@@ -138,11 +138,14 @@ class Engine:
 
 
 def predict_action(enc, unet, stream, image, agent_pos, ts, step_ratio, alphas_cp, rng,
-                   phases=None):
+                   phases=None, clip_sample=True, init_noise=None):
     """One full policy forward: encode obs once, then the DDIM denoise loop.
 
     If `phases` (a dict) is given, accumulate per-phase wall-clock (seconds) into
     it so the orchestration overhead can be separated from the engine compute.
+    clip_sample matches the trained scheduler config (clip_sample=True): the
+    predicted x0 is clamped to [-1,1] each step (verified against diffusers
+    DDIMScheduler to 2.8e-08). It does not affect latency (cheap numpy op).
     """
     pc = time.perf_counter
 
@@ -162,7 +165,10 @@ def predict_action(enc, unet, stream, image, agent_pos, ts, step_ratio, alphas_c
     unet.set_input("global_cond", global_cond)     # constant across steps -> upload once
     acc("enc_d2h", pc() - t0)
     # 2. DDIM denoising loop (unet runs xN)
-    sample = rng.standard_normal(sample_shape).astype(np.float32)
+    if init_noise is not None:
+        sample = np.asarray(init_noise, dtype=np.float32)
+    else:
+        sample = rng.standard_normal(sample_shape).astype(np.float32)
     for t in ts:
         t0 = pc()
         unet.set_input("sample", sample)
@@ -175,6 +181,8 @@ def predict_action(enc, unet, stream, image, agent_pos, ts, step_ratio, alphas_c
         a_t = np.float32(alphas_cp[int(t)])
         a_prev = np.float32(alphas_cp[t_prev]) if t_prev >= 0 else np.float32(1.0)
         x0 = (sample - np.sqrt(1.0 - a_t) * eps) / np.sqrt(a_t)
+        if clip_sample:
+            x0 = np.clip(x0, -1.0, 1.0)
         sample = (np.sqrt(a_prev) * x0 + np.sqrt(1.0 - a_prev) * eps).astype(np.float32)
         acc("step_numpy", pc() - t0)
     return sample                                   # action [1,16,2]
