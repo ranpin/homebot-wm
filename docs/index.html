@@ -7,6 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <!-- 共享演示页外壳（配色/页头/章节/按钮/页脚统一，单一事实源在主站 public/demo-shell.css） -->
 <link rel="stylesheet" href="https://ranpin.github.io/demo-shell.css">
+<!-- 明暗主题：同步加载，首屏绘制前应用已存主题，避免闪烁 -->
+<script src="https://ranpin.github.io/theme.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
   /* 仅保留本页 Demo tab 专属的视觉元素；结构色一律引用外壳的 --ds-* 变量 */
@@ -38,7 +40,7 @@
       <div class="ds-header__row">
         <a class="ds-home" href="https://ranpin.github.io/">← 返回主页</a>
         <h1>视觉扩散策略的压缩与边缘部署</h1>
-        <span class="ds-badge">🤖 智能机器人 / 具身智能</span>
+        <button class="ds-theme-btn" type="button" onclick="toggleTheme()" aria-label="切换明暗主题"><span class="ds-theme-icon">🌙</span></button>
       </div>
       <p class="ds-header__sub">HomeBot-WM 主线实验报告 · Diffusion Policy (image Push-T, 262M) → Jetson AGX Orin</p>
     </div>
