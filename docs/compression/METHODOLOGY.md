@@ -6,7 +6,7 @@
 
 | 项 | 值 | 来源 |
 |---|---|---|
-| 载体架构 | Diffusion Policy, image Push-T 变体 | [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（MIT），`git clone --depth 1`，**未 pin commit**（可复现性缺口，建议 pin） |
+| 载体架构 | Diffusion Policy, image Push-T 变体 | [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（MIT），base commit **`5ba07ac6661db573af695b419a7947ecb704690f`**（main，`git clone --depth 1`；上游 tracked 文件零修改，我们的压缩脚本以 untracked 新增、已归档于 [scripts/](scripts/)） |
 | Workspace 类 | `TrainDiffusionUnetHybridWorkspace` | 仓库 `diffusion_policy/workspace/train_diffusion_unet_hybrid_workspace.py` |
 | 配置 | `image_pusht_diffusion_policy_cnn.yaml` | 仓库根（下载自项目实验目录） |
 | 权重 | **我们自己从头训练**，epoch-200 | `data/outputs/pusht_img/checkpoints/epoch=0200-test_mean_score=0.876.ckpt`（pc-3070） |
@@ -45,7 +45,7 @@
 
 ## 4. 指标定义
 
-- **mean_score**：Push-T 闭环成功率指标 = T 形块对目标区的**覆盖率**（0–1，连续），n 个 episode 取均值。**非二值成功**。由 `PushTImageRunner.run()` 返回 `test/mean_score`。
+- **mean_score**：Push-T 闭环成功率指标 = T 形块对目标区的**覆盖率**（0–1，连续），n 个 episode 取均值。**非二值成功**。由 `PushTImageRunner.run()` 返回 `test/mean_score`。**每个 episode 的 score 取回合内覆盖率的最大值**（`np.max(all_rewards[i])`，Push-T 官方口径）：策略是反应式行为克隆、无「对齐即停」机制，整回合持续输出动作，故记「曾达到的最高覆盖率」而非末态值——末尾把块推出对齐位不降分。这是任务固有口径（非压缩引入），但会掩盖「策略不会停、末态可能更差」，主动说明。
 - **parity（max_abs_diff）**：ONNX 输出 vs PyTorch 输出的最大绝对差，`np.allclose(atol=1e-4)` 判过。
 - **INT8-vs-FP32 diff**：同输入下 INT8 ONNX 与 FP32 ONNX 输出的最大绝对差（单步，非闭环）。
 - **UNet 调用/预测**：每次 `predict_action` 的 UNet 前向次数 = num_inference_steps（视觉编码器恒 1×）。
@@ -152,3 +152,5 @@ python3 eval_trt_pusht.py --unet unet_int8 --steps 50 --n_test 50 --init_noise t
 | Orin 闭环 INT8 vs FP16 | **6 噪声种子** × n=50 | paired t=-6.97, p<0.001, 6/6 全负 |
 
 **run-to-run 方差**：DDPM-50 两种子差 ~7 分（0.558 vs 0.490），反映坏采样器的高方差；DDIM/INT8 各配置为确定性（同种子复现到小数点后 4 位，已用 ddim16 验证 harness 确定性）。**Orin 延迟**：dog GPU 与 system_agent 共享 → run 间 ±7%，取 median、warmup≥5（冷启动曾虚高到 296ms，是假象）。**Orin 闭环精度**：Push-T 闭环混沌、对初始噪声实现极敏感（numpy 噪声 → ~0 分，torch 噪声 → 0.6），必须用基线 torch.randn(seed) 噪声；INT8-vs-FP16 用 6 个噪声种子配对以消除此敏感性（表 5）。
+
+**统计口径与局限（CI）**：表 1/2 的 n=50 数字是**单次运行的点估计**——评测脚本只归档了聚合 `mean_score`、**未保存 per-episode 分数**，故无法事后计算 episode 级置信区间或做形式配对检验。据 n=50 与 Push-T 覆盖率的高方差（双峰：多数近 1.0、少数近 0），均值标准误量级 ~0.04（95% CI 约 ±0.08）；**凡差异落在此带内的对照（DDIM-50 vs DDPM-100 的 +2.7、DDIM-16 vs DDIM-5 的 1.3）一律判为统计不可分、不作排序结论**。唯一做了形式配对检验的是 Orin TRT INT8-vs-FP16（6 噪声种子，paired t=−6.97，p<0.001，表 5），因其效应量（−0.12）远超噪声带。若需给表 1/2 补真实 episode 级 CI，须重跑并 dump per-episode 分数（属新增实验，本轮 polish 未做）。
