@@ -9,9 +9,8 @@
 <link rel="stylesheet" href="https://ranpin.github.io/demo-shell.css">
 <!-- 明暗主题：同步加载，首屏绘制前应用已存主题，避免闪烁 -->
 <script src="https://ranpin.github.io/theme.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
-  /* 仅保留本页 Demo tab 专属的视觉元素；结构色一律引用外壳的 --ds-* 变量 */
+  /* 演示 tab 专属视觉；结构色一律引用外壳的 --ds-* 变量 */
   .demo-wrap{font-size:.98rem;}
   .demo-lead{margin:.3rem 0 1rem;}
   .demo-task{background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); padding:.75rem 1rem; margin:0 0 1rem;}
@@ -21,17 +20,33 @@
   .demo-legend .lg{display:inline-flex; align-items:center; gap:.4rem;}
   .demo-legend .lg i{width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.18); flex:none;}
   figure.demo-fig{margin:.3rem 0 1.3rem; text-align:center;}
-  figure.demo-fig video{
-    max-width:100%; width:480px; border-radius:10px; border:1px solid var(--ds-border);
-    box-shadow:0 2px 14px rgba(0,0,0,.10); background:#000;
-  }
+  figure.demo-fig video{max-width:100%; width:480px; border-radius:10px; border:1px solid var(--ds-border); box-shadow:0 2px 14px rgba(0,0,0,.10); background:#000;}
   .demo-segs{font-size:.93rem;}
   .demo-segs-t{font-weight:600; margin:.2rem 0 .45rem;}
   .demo-segs ol{margin:.2rem 0 .6rem; padding-left:1.6rem;}
   .demo-segs li{margin:.4rem 0;}
   .demo-note{color:var(--ds-muted); font-size:.86rem; margin-top:.5rem;}
-  .mermaid-slot{text-align:center; margin:1.6rem 0; overflow-x:auto;}
-  .mermaid-slot svg{max-width:100%; height:auto;}
+
+  /* 评测结果 / 核心方法 精简板块 */
+  .sec-lead{color:var(--ds-muted); font-size:13.5px; margin:0 0 16px; line-height:1.65;}
+  .sec-lead a{color:var(--ds-accent);}
+  .sub{font-size:15px; font-weight:700; color:var(--ds-text); margin:24px 0 2px;}
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:4px 0 0;}
+  @media (max-width:720px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); padding:16px 14px; text-align:center;}
+  .stat .v{font-size:24px; font-weight:700; color:var(--ds-accent); line-height:1.1; font-variant-numeric:tabular-nums;}
+  .stat .v small{font-size:13px; font-weight:600;}
+  .stat .k{font-size:12px; color:var(--ds-muted); margin-top:6px; line-height:1.4;}
+  .tbl-wrap{overflow-x:auto;}
+  .tbl{width:100%; border-collapse:collapse; font-size:13.5px; margin:6px 0 0; background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); overflow:hidden;}
+  .tbl th,.tbl td{padding:8px 12px; text-align:left; border-bottom:1px solid var(--ds-border); font-variant-numeric:tabular-nums;}
+  .tbl th{background:var(--ds-code-bg); font-weight:600; font-size:12.5px; color:var(--ds-muted);}
+  .tbl tr:last-child td{border-bottom:none;}
+  .tbl td.rowh{color:var(--ds-muted); font-weight:600;}
+  .sec-note{color:var(--ds-muted); font-size:12.5px; margin-top:12px; line-height:1.65;}
+  .sec-note a{color:var(--ds-accent);}
+  .pipeline{background:var(--ds-code-bg); border:1px solid var(--ds-border); border-radius:10px; padding:15px; overflow-x:auto; margin:10px 0 4px; font-family:var(--ds-mono); font-size:12.5px; color:var(--ds-text); text-align:center; white-space:nowrap;}
+  code{background:var(--ds-code-bg); border:1px solid var(--ds-border); border-radius:5px; padding:1px 6px; font-family:var(--ds-mono); font-size:12.5px; color:var(--ds-accent-strong);}
 </style>
 </head>
 <body>
@@ -61,100 +76,80 @@
     <footer class="ds-footer">载体任务 Push-T 为 2D 仿真 · 精度为 pymunk 闭环 mean_score (n=50) · Orin 实测：DDIM-16 FP16=12Hz / INT8=18Hz；TRT 原生 INT8 闭环比 FP16 掉 ~0.12 (p&lt;0.001)</footer>
   </div>
 
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad:false, theme:'neutral', securityLevel:'loose' });
-
-  const GH_BASE = 'https://github.com/ranpin/homebot-wm/tree/main/docs/compression/';
+<script>
+  const GH = 'https://github.com/ranpin/homebot-wm/blob/main/docs/compression/';
   const content = document.getElementById('content');
   const buttons = [...document.querySelectorAll('.ds-nav .ds-tab')];
 
+  const HTML = {
+    DEMO:
+      '<div class="demo-wrap">'+
+      '<p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，最高精度配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>'+
+      '<div class="demo-task">'+
+      '<p><b>任务 Push-T</b>：一个<b>质点 agent</b>（蓝色圆点）把 <b>T 形块</b>（灰色）推去与<b>目标轮廓</b>（绿色）对齐。coverage（覆盖率）= T 块与目标区的重叠比例（0–1），即本任务的 score，≥0.95 记成功。</p>'+
+      '<p class="demo-warn">⚠ 画面里<b>没有机械臂 / 机器人本体</b>——Push-T 是 Diffusion Policy 的标准 2D 抽象基准，agent 是直接施力的质点。选它当载体是因为它轻量、能在 8GB 上从头训练，而本项目的交付物是<b>任务无关的压缩方法链</b>（ONNX→INT8→DDIM→TensorRT）。</p>'+
+      '</div>'+
+      '<div class="demo-legend">'+
+      '<span class="lg"><i style="background:#4169E1"></i>agent（质点·施力点）</span>'+
+      '<span class="lg"><i style="background:#778899"></i>T 块（被推物体）</span>'+
+      '<span class="lg"><i style="background:#90EE90"></i>目标轮廓</span>'+
+      '<span class="lg"><i style="background:#FF0000"></i>当前动作指令</span>'+
+      '</div>'+
+      '<figure class="demo-fig">'+
+      '<video controls preload="metadata" src="compression/demo/reel.mp4"></video>'+
+      '</figure>'+
+      '<div class="demo-segs">'+
+      '<p class="demo-segs-t">逐段说明（与视频内「片段 N/4」标识对应）</p>'+
+      '<ol>'+
+      '<li><b>片段 1</b> · seed 10001 · coverage <b>1.00</b> —— T 块完美对齐目标（满分）。</li>'+
+      '<li><b>片段 2</b> · seed 10002 · coverage <b>1.00</b> —— 另一初始位姿，同样满分。</li>'+
+      '<li><b>片段 3</b> · seed 10000 · coverage <b>0.96</b> —— 接近完美对齐。</li>'+
+      '<li><b>片段 4</b> · seed 10004 · coverage <b>0.72</b> —— 部分对齐（展示非满分情形）。</li>'+
+      '</ol>'+
+      '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「评测结果」tab。</p>'+
+      '<p class="demo-note">注：策略是反应式模仿（行为克隆），无「对齐即停」机制，整个回合持续输出动作；coverage 取回合内最大值，故个别片段末尾把块推出对齐位不会降低该段分数——这是 Push-T + 模仿策略的固有行为，非压缩引入。</p>'+
+      '</div>'+
+      '</div>',
+
+    README:
+      '<p class="sec-lead">完整报告（摘要 + 两张全局地图 + 表 1–5 + 诚实边界）见 <a href="'+GH+'README.md" target="_blank" rel="noopener">docs/compression/README.md</a>。下面是关键结果。</p>'+
+      '<div class="stats">'+
+        '<div class="stat"><div class="v">87.6<small>%</small></div><div class="k">训练精度<br>DDPM-100 · 8GB 3070 从头训</div></div>'+
+        '<div class="stat"><div class="v">0.814</div><div class="k">DDIM-50 闭环 mean_score<br>≈DDPM-100，一半算力</div></div>'+
+        '<div class="stat"><div class="v">18<small>Hz</small></div><div class="k">Orin DDIM-16 INT8<br>全墙钟实测（过 10Hz 环）</div></div>'+
+        '<div class="stat"><div class="v">−0.12</div><div class="k">TRT 原生 INT8 闭环掉分<br>vs FP16 · 6 种子 p&lt;0.001</div></div>'+
+      '</div>'+
+      '<h3 class="sub">Orin 实测延迟 · 全 predict_action 墙钟（batch=1 · TensorRT 10.7）</h3>'+
+      '<div class="tbl-wrap"><table class="tbl">'+
+        '<tr><th>配置</th><th>DDIM 步数</th><th>精度 (n50)</th><th>墙钟 (ms)</th><th>吞吐 (Hz)</th><th>过 10Hz</th></tr>'+
+        '<tr><td class="rowh">全 FP16</td><td>50</td><td>0.814</td><td>238</td><td>4.2</td><td>✗</td></tr>'+
+        '<tr><td class="rowh">全 FP16</td><td>16</td><td>0.738</td><td>83</td><td>12.0</td><td>✓</td></tr>'+
+        '<tr><td class="rowh"><b>unet-INT8 + enc-FP16</b></td><td>16</td><td>0.738</td><td><b>55</b></td><td><b>18.2</b></td><td>✓</td></tr>'+
+        '<tr><td class="rowh">unet-INT8 + enc-FP16</td><td>5</td><td>0.725</td><td>30</td><td>33.5</td><td>✓</td></tr>'+
+      '</table></div>'+
+      '<p class="sec-note"><b>推荐部署</b>：精度优先 DDIM-16 + FP16（83ms / 12Hz）；速度/内存优先 DDIM-16 + INT8（55ms / 18Hz，牺牲 ~0.12 精度换 1.6× 提速 + ~4× 压缩）。<b>两条 INT8 路线代价不同</b>：onnxruntime QDQ INT8 在 n=50 与 FP32 统计不可分（表 2），但 TRT 原生熵校准 INT8 在 Orin 闭环掉 ~0.12（表 5）——「INT8 无损」只对 onnxruntime 路线成立、不能外推到 TRT。表中精度列为 onnxruntime 口径；DDIM-50 + INT8 仅 6.8Hz 不过 10Hz。完整表 1–5 与诚实边界见报告。</p>',
+
+    METHODOLOGY:
+      '<p class="sec-lead">完整方法学（模型/权重来源、数据集、校准集、指标定义、确切命令、环境版本）见 <a href="'+GH+'METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>；踩坑记录见 <a href="'+GH+'PROBLEMS.md" target="_blank" rel="noopener">PROBLEMS.md</a>。下面是方法总览。</p>'+
+      '<p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>'+
+      '<div class="pipeline">训练 (8GB) ──► ONNX 导出 (拆 encoder+unet) ──► INT8 PTQ (onnxruntime QDQ) ──► 步数压缩 (DDIM) ──► TensorRT (Orin)</div>'+
+      '<div class="tbl-wrap"><table class="tbl">'+
+        '<tr><th>环节</th><th>做法与理由</th></tr>'+
+        '<tr><td class="rowh">拆两组件导出</td><td>扩散采样循环（UNet×N）留在 runtime，只导出 encoder 与 UNet 单步前向——扩散模型部署标准做法，也让步数成为 runtime 旋钮</td></tr>'+
+        '<tr><td class="rowh">normalizer 烘焙</td><td>烘焙进 encoder ONNX，导出图直接吃原始 obs（image [0,1] + agent_pos），动作反归一化留在 runtime</td></tr>'+
+        '<tr><td class="rowh">INT8 QDQ</td><td>onnxruntime 静态量化产出 QDQ 图，TensorRT 原生消费（无需单独校准缓存）</td></tr>'+
+        '<tr><td class="rowh">DDIM 减步</td><td>DDPM 不能减步（抽稀即崩至 ~0.5），DDIM 可以且优雅退化——步数直接决定 UNet 调用次数（100×→50×→5×），Orin 墙钟随之近似线性变化</td></tr>'+
+      '</table></div>'
+  };
+
   function switchTab(doc){
     buttons.forEach(b=>b.classList.toggle('active', b.dataset.doc===doc));
-    load(doc);
-  }
-
-  async function load(doc){
-    if(doc==='DEMO'){
-      content.innerHTML =
-        '<div class="demo-wrap">'+
-        '<p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，最高精度配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>'+
-        '<div class="demo-task">'+
-        '<p><b>任务 Push-T</b>：一个<b>质点 agent</b>（蓝色圆点）把 <b>T 形块</b>（灰色）推去与<b>目标轮廓</b>（绿色）对齐。coverage（覆盖率）= T 块与目标区的重叠比例（0–1），即本任务的 score，≥0.95 记成功。</p>'+
-        '<p class="demo-warn">⚠ 画面里<b>没有机械臂 / 机器人本体</b>——Push-T 是 Diffusion Policy 的标准 2D 抽象基准，agent 是直接施力的质点。选它当载体是因为它轻量、能在 8GB 上从头训练，而本项目的交付物是<b>任务无关的压缩方法链</b>（ONNX→INT8→DDIM→TensorRT）。</p>'+
-        '</div>'+
-        '<div class="demo-legend">'+
-        '<span class="lg"><i style="background:#4169E1"></i>agent（质点·施力点）</span>'+
-        '<span class="lg"><i style="background:#778899"></i>T 块（被推物体）</span>'+
-        '<span class="lg"><i style="background:#90EE90"></i>目标轮廓</span>'+
-        '<span class="lg"><i style="background:#FF0000"></i>当前动作指令</span>'+
-        '</div>'+
-        '<figure class="demo-fig">'+
-        '<video controls preload="metadata" src="compression/demo/reel.mp4"></video>'+
-        '</figure>'+
-        '<div class="demo-segs">'+
-        '<p class="demo-segs-t">逐段说明（与视频内「片段 N/4」标识对应）</p>'+
-        '<ol>'+
-        '<li><b>片段 1</b> · seed 10001 · coverage <b>1.00</b> —— T 块完美对齐目标（满分）。</li>'+
-        '<li><b>片段 2</b> · seed 10002 · coverage <b>1.00</b> —— 另一初始位姿，同样满分。</li>'+
-        '<li><b>片段 3</b> · seed 10000 · coverage <b>0.96</b> —— 接近完美对齐。</li>'+
-        '<li><b>片段 4</b> · seed 10004 · coverage <b>0.72</b> —— 部分对齐（展示非满分情形）。</li>'+
-        '</ol>'+
-        '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「评测结果」tab。</p>'+
-        '<p class="demo-note">注：策略是反应式模仿（行为克隆），无「对齐即停」机制，整个回合持续输出动作；coverage 取回合内最大值，故个别片段末尾把块推出对齐位不会降低该段分数——这是 Push-T + 模仿策略的固有行为，非压缩引入。</p>'+
-        '</div>'+
-        '</div>';
-      window.scrollTo({top:0, behavior:'smooth'});
-      return;
-    }
-    content.innerHTML = '<p class="ds-loading">加载中…</p>';
-    let md;
-    try{
-      const res = await fetch('compression/'+doc+'.md', {cache:'no-store'});
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      md = await res.text();
-    }catch(e){
-      content.innerHTML = '<p class="ds-err">加载 '+doc+'.md 失败：'+e.message+
-        '（本地直接打开 index.html 会因 file:// 跨域失败，请通过 GitHub Pages 或本地 http 服务访问）</p>';
-      return;
-    }
-
-    // 抽出 mermaid 代码块，用占位 div 替代；稍后用 mermaid.render(代码字符串) 直接渲染，
-    // 避开「把含 <br/> 的图塞进 <pre> 再读 textContent」的转义坑。
-    const codes = [];
-    const prepped = md.replace(/```mermaid\r?\n([\s\S]*?)```/g, (_,code)=>{
-      codes.push(code);
-      return '<div class="mermaid-slot" data-idx="'+(codes.length-1)+'"></div>';
-    });
-
-    content.innerHTML = marked.parse(prepped);
-
-    // 文档间 .md 链接 -> 切 tab（PROBLEMS.md 已不在本页 tab，转 GitHub）；scripts/ eval/ 等 -> GitHub
-    content.querySelectorAll('a[href]').forEach(a=>{
-      const h = a.getAttribute('href') || '';
-      const m = h.match(/^(README|METHODOLOGY)\.md$/);
-      if(m){ a.addEventListener('click',e=>{e.preventDefault(); switchTab(m[1]);}); return; }
-      if(/^(scripts|eval)(\/|#|$)/.test(h) || h.startsWith('./') || h==='PROBLEMS.md'){
-        a.href = GH_BASE + h.replace(/^\.\//,''); a.target='_blank'; a.rel='noopener';
-      }
-    });
-
-    // 渲染 mermaid
-    for(let i=0;i<codes.length;i++){
-      const slot = content.querySelector('.mermaid-slot[data-idx="'+i+'"]');
-      if(!slot) continue;
-      try{
-        const {svg} = await mermaid.render('mmd-'+doc+'-'+i, codes[i]);
-        slot.innerHTML = svg;
-      }catch(e){
-        slot.innerHTML = '<p class="ds-err">[mermaid 渲染失败: '+e.message+']</p>';
-      }
-    }
+    content.innerHTML = HTML[doc] || '';
     window.scrollTo({top:0, behavior:'smooth'});
   }
-
   buttons.forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.doc)));
-  load('DEMO');
+  const h = location.hash.replace('#','').toUpperCase();
+  switchTab(HTML[h] ? h : 'DEMO');
 </script>
 </body>
 </html>
