@@ -48,10 +48,9 @@
 
   <div class="ds-wrap">
     <nav class="ds-nav">
-      <button class="ds-tab active" data-doc="DEMO">Demo</button>
-      <button class="ds-tab" data-doc="README">报告</button>
-      <button class="ds-tab" data-doc="METHODOLOGY">方法</button>
-      <button class="ds-tab" data-doc="PROBLEMS">问题记录</button>
+      <button class="ds-tab active" data-doc="DEMO">演示</button>
+      <button class="ds-tab" data-doc="README">评测结果</button>
+      <button class="ds-tab" data-doc="METHODOLOGY">核心方法</button>
       <span class="ds-nav__spacer"></span>
       <a class="ds-navlink" href="https://ranpin.github.io/edge-ai-docs/#robot">← 返回技术文档</a>
       <a class="ds-navlink" href="https://github.com/ranpin/homebot-wm/tree/main/docs/compression" target="_blank" rel="noopener">GitHub 源 ↗</a>
@@ -101,7 +100,7 @@
         '<li><b>片段 3</b> · seed 10000 · coverage <b>0.96</b> —— 接近完美对齐。</li>'+
         '<li><b>片段 4</b> · seed 10004 · coverage <b>0.72</b> —— 部分对齐（展示非满分情形）。</li>'+
         '</ol>'+
-        '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「报告」tab。</p>'+
+        '<p class="demo-note">同一策略、同一压缩配置，仅初始位姿不同；4 段中 3 段 coverage ≥ 0.96。完整 n=50 统计见「评测结果」tab。</p>'+
         '<p class="demo-note">注：策略是反应式模仿（行为克隆），无「对齐即停」机制，整个回合持续输出动作；coverage 取回合内最大值，故个别片段末尾把块推出对齐位不会降低该段分数——这是 Push-T + 模仿策略的固有行为，非压缩引入。</p>'+
         '</div>'+
         '</div>';
@@ -130,12 +129,12 @@
 
     content.innerHTML = marked.parse(prepped);
 
-    // 文档间 .md 链接 -> 切 tab；scripts/ eval/ 等 -> GitHub
+    // 文档间 .md 链接 -> 切 tab（PROBLEMS.md 已不在本页 tab，转 GitHub）；scripts/ eval/ 等 -> GitHub
     content.querySelectorAll('a[href]').forEach(a=>{
       const h = a.getAttribute('href') || '';
-      const m = h.match(/^(README|METHODOLOGY|PROBLEMS)\.md$/);
+      const m = h.match(/^(README|METHODOLOGY)\.md$/);
       if(m){ a.addEventListener('click',e=>{e.preventDefault(); switchTab(m[1]);}); return; }
-      if(/^(scripts|eval)(\/|#|$)/.test(h) || h.startsWith('./')){
+      if(/^(scripts|eval)(\/|#|$)/.test(h) || h.startsWith('./') || h==='PROBLEMS.md'){
         a.href = GH_BASE + h.replace(/^\.\//,''); a.target='_blank'; a.rel='noopener';
       }
     });
