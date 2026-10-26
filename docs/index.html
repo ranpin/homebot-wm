@@ -66,7 +66,6 @@
     <section class="ds-section" id="demo">
       <h2 class="ds-h2">演示</h2>
       <div class="demo-wrap">
-      <p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + INT8</b>，最高精度配置）在 Push-T 任务上、4 个不同初始位姿的闭环 rollout（2× 速播放）。</p>
       <div class="demo-task">
       <p><b>任务 Push-T</b>：一个<b>质点 agent</b>（蓝色圆点）把 <b>T 形块</b>（灰色）推去与<b>目标轮廓</b>（绿色）对齐。coverage（覆盖率）= T 块与目标区的重叠比例（0–1），即本任务的 score，≥0.95 记成功。</p>
       <p class="demo-warn">⚠ 画面里<b>没有机械臂 / 机器人本体</b>——Push-T 是 Diffusion Policy 的标准 2D 抽象基准，agent 是直接施力的质点。选它当载体是因为它轻量、能在 8GB 上从头训练，而本项目的交付物是<b>任务无关的压缩方法链</b>（ONNX→INT8→DDIM→TensorRT）。</p>
@@ -77,6 +76,25 @@
       <span class="lg"><i style="background:#90EE90"></i>目标轮廓</span>
       <span class="lg"><i style="background:#FF0000"></i>当前动作指令</span>
       </div>
+
+      <h3 class="sub">① Jetson AGX Orin 实机闭环 · TensorRT · FP16 vs INT8 对照</h3>
+      <p class="demo-lead">在 <b>Orin 实机</b>上用 TensorRT 引擎跑闭环（<code>eval_trt_pusht.py</code>，ctypes 直驱、全程无 torch），左右分屏 = <b>同一 seed、同一初始噪声</b>下的 FP16（左）与 TRT 原生 INT8（右）。DDIM-50，2× 速播放，画面取环境原生 512×512 渲染（不影响策略的 96×96 观测路径）。</p>
+      <figure class="demo-fig">
+      <video controls preload="metadata" src="compression/demo/orin_reel.mp4"></video>
+      </figure>
+      <div class="demo-segs">
+      <p class="demo-segs-t">三段对照（刻意选了双向摆动，不是只挑 INT8 失败的）</p>
+      <ol>
+      <li><b>seed 10006</b> · FP16 <b>1.00</b> vs INT8 <b>1.00</b> —— 打平。</li>
+      <li><b>seed 10011</b> · FP16 <b>0.97</b> vs INT8 <b>0.59</b> —— INT8 退化。</li>
+      <li><b>seed 10002</b> · FP16 <b>0.51</b> vs INT8 <b>1.00</b> —— INT8 反而更好。</li>
+      </ol>
+      <p class="demo-note"><b>为什么单集看不出结论</b>：Push-T 闭环是混沌系统，INT8 的 ~7–9% 动作发散被逐步放大，单集差异双向摆动达 ±0.5~1.0（这 16 个 seed 里 INT8 只在 6 个上更低、7 个上反而更高）。系统性代价 <b>−0.12</b> 只有多集聚合后才显现——报告表 5 用 6 噪声种子 × n=50 配对得 t=−6.97、p&lt;0.001。</p>
+      <p class="demo-note">Orin 绝对分低于 pc-3070（这 16 seed 上 FP16 均值 0.54 vs 0.81）：dog 的 pymunk 是 7.3.1、pc-3070 是 6.2.1，叠加混沌放大，故<b>只有同平台 FP16-vs-INT8 配对有效</b>，跨平台绝对分不可比。</p>
+      </div>
+
+      <h3 class="sub">② 压缩策略闭环 rollout（pc-3070 CPU 录制）</h3>
+      <p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + onnxruntime QDQ INT8</b>，即表 2 中与 FP32 统计不可分的那条无损路线）在 4 个不同初始位姿上的闭环 rollout（2× 速播放）。</p>
       <figure class="demo-fig">
       <video controls preload="metadata" src="compression/demo/reel.mp4"></video>
       </figure>
