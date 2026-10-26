@@ -39,7 +39,7 @@
 | 配置 C | per_channel=True，op_types=Conv（per_channel 对 1D 权重会崩，故限定 Conv） |
 | 预处理 | `quant_pre_process(skip_symbolic_shape=True, auto_merge=True)`（动态 batch 轴导致符号形状推断失败） |
 
-**校准的已知局限**：UNet 校准用 randn sample + 均匀 timestep，覆盖高噪声区；更精确应按 timestep 用 forward-diffuse 的真实动作（`scheduler.add_noise`）。当前配置下 INT8 已精度无损，未进一步精修。
+**校准的已知局限**：UNet 校准用 randn sample + 均匀 timestep，覆盖高噪声区；更精确应按 timestep 用 forward-diffuse 的真实动作（`scheduler.add_noise`）。**此局限的后果已被实测出来**：TRT 原生 INT8 闭环比 FP16 掉 ~0.12（表 5），而 onnxruntime QDQ INT8 在 n=50 与 FP32 统计不可分（表 2）——即两条 INT8 路线质量不同。精修校准（按 timestep forward-diffuse 真实动作）是**尚未验证的改进方向**，本轮未做。
 
 **两条 INT8 路线（口径不同、数据相同）**：上面的 onnxruntime QDQ 路线用于 **CPU 精度验证**（表 1/2 闭环）；Orin 部署用 **TRT 原生校准**（`IInt8EntropyCalibrator2`，`build_trt_calib.py`）从 FP32 ONNX 直接建引擎——因为 TRT 无法解析 onnxruntime QDQ 产出的 INT32 zero-point DequantizeLinear。两路共用同一校准分布（128 真实观测，`gen_calib_data.py` 生成）。**精度结论来自 onnxruntime 路线，Orin 延迟来自 TRT 路线**（见表 4 + README 诚实边界）。
 
