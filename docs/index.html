@@ -81,6 +81,7 @@
       <p class="demo-lead">在 <b>Orin 实机</b>上用 TensorRT 引擎跑闭环（<code>eval_trt_pusht.py</code>，ctypes 直驱、全程无 torch），左右分屏 = <b>同一 seed、同一初始噪声</b>下的 FP16（左）与 TRT 原生 INT8（右）。DDIM-50，2× 速播放，画面取环境原生 512×512 渲染（不影响策略的 96×96 观测路径）。</p>
       <figure class="demo-fig">
       <video controls preload="metadata" src="compression/demo/orin_reel.mp4"></video>
+      <figcaption class="ds-figcap">图 1 · Orin 实机闭环 rollout：FP16（左）vs TRT 原生 INT8（右）——同一 seed、同一初始噪声 · DDIM-50 · 2× 速播放</figcaption>
       </figure>
       <div class="demo-segs">
       <p class="demo-segs-t">三段对照（刻意选了双向摆动，不是只挑 INT8 失败的）</p>
@@ -94,9 +95,10 @@
       </div>
 
       <h3 class="sub">② 压缩策略闭环 rollout（pc-3070 CPU 录制）</h3>
-      <p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + onnxruntime QDQ INT8</b>，即表 2 中与 FP32 统计不可分的那条无损路线）在 4 个不同初始位姿上的闭环 rollout（2× 速播放）。</p>
+      <p class="demo-lead">下面 4 段是<b>压缩后策略</b>（Diffusion Policy → <b>DDIM-50 + onnxruntime QDQ INT8</b>，即报告表 2 中与 FP32 统计不可分的那条无损路线）在 4 个不同初始位姿上的闭环 rollout（2× 速播放）。</p>
       <figure class="demo-fig">
       <video controls preload="metadata" src="compression/demo/reel.mp4"></video>
+      <figcaption class="ds-figcap">图 2 · 压缩策略（DDIM-50 + onnxruntime QDQ INT8）在 4 个不同初始位姿上的闭环 rollout · pc-3070 CPU 录制 · 2× 速播放</figcaption>
       </figure>
       <div class="demo-segs">
       <p class="demo-segs-t">逐段说明（与视频内「片段 N/4」标识对应）</p>
@@ -115,22 +117,23 @@
     <!-- ============ 评测结果 ============ -->
     <section class="ds-section" id="results">
       <h2 class="ds-h2">评测结果</h2>
-      <p class="sec-lead">完整报告（摘要 + 两张全局地图 + 表 1–5 + 诚实边界）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/README.md" target="_blank" rel="noopener">docs/compression/README.md</a>。下面是关键结果。</p>
+      <p class="sec-lead">测试数据集与协议：Push-T image 闭环基准（Diffusion Policy 文献标准 2D 仿真任务，pymunk 物理）——策略在 Push-T 标准训练划分上从头训练（DDPM-100，8GB 3070）；精度为闭环 rollout mean_score（n=50 随机种子），Orin 延迟为实机 predict_action 全墙钟（batch=1 · TensorRT 10.7），TRT 原生 INT8 vs FP16 闭环对比在 Orin 上用 6 噪声种子 × n=50 配对。</p>
+      <p class="sec-lead">完整报告（摘要 + 两张全局地图 + 报告表 1–5 + 诚实边界）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/README.md" target="_blank" rel="noopener">docs/compression/README.md</a>。下面是关键结果。</p>
       <div class="stats">
         <div class="stat"><div class="v">87.6<small>%</small></div><div class="k">训练精度<br>DDPM-100 · 8GB 3070 从头训</div></div>
         <div class="stat"><div class="v">0.814</div><div class="k">DDIM-50 闭环 mean_score<br>≈DDPM-100，一半算力</div></div>
         <div class="stat"><div class="v">18<small>Hz</small></div><div class="k">Orin DDIM-16 INT8<br>全墙钟实测（过 10Hz 环）</div></div>
         <div class="stat"><div class="v">−0.12</div><div class="k">TRT 原生 INT8 闭环掉分<br>vs FP16 · 6 种子 p&lt;0.001</div></div>
       </div>
-      <h3 class="sub">Orin 实测延迟 · 全 predict_action 墙钟（batch=1 · TensorRT 10.7）</h3>
       <div class="tbl-wrap"><table class="tbl">
+        <caption>表 1 · Orin 实测延迟与精度 · 全 predict_action 墙钟（batch=1 · TensorRT 10.7）</caption>
         <tr><th>配置</th><th>DDIM 步数</th><th>精度 (n50)</th><th>墙钟 (ms)</th><th>吞吐 (Hz)</th><th>过 10Hz</th></tr>
         <tr><td class="rowh">全 FP16</td><td>50</td><td>0.814</td><td>238</td><td>4.2</td><td>✗</td></tr>
         <tr><td class="rowh">全 FP16</td><td>16</td><td>0.738</td><td>83</td><td>12.0</td><td>✓</td></tr>
         <tr><td class="rowh"><b>unet-INT8 + enc-FP16</b></td><td>16</td><td>0.738</td><td><b>55</b></td><td><b>18.2</b></td><td>✓</td></tr>
         <tr><td class="rowh">unet-INT8 + enc-FP16</td><td>5</td><td>0.725</td><td>30</td><td>33.5</td><td>✓</td></tr>
       </table></div>
-      <p class="sec-note"><b>推荐部署</b>：精度优先 DDIM-16 + FP16（83ms / 12Hz）；速度/内存优先 DDIM-16 + INT8（55ms / 18Hz，牺牲 ~0.12 精度换 1.6× 提速 + ~4× 压缩）。<b>两条 INT8 路线代价不同</b>：onnxruntime QDQ INT8 在 n=50 与 FP32 统计不可分（表 2），但 TRT 原生熵校准 INT8 在 Orin 闭环掉 ~0.12（表 5）——「INT8 无损」只对 onnxruntime 路线成立、不能外推到 TRT。表中精度列为 onnxruntime 口径；DDIM-50 + INT8 仅 6.8Hz 不过 10Hz。完整表 1–5 与诚实边界见报告。</p>
+      <p class="sec-note"><b>推荐部署</b>：精度优先 DDIM-16 + FP16（83ms / 12Hz）；速度/内存优先 DDIM-16 + INT8（55ms / 18Hz，牺牲 ~0.12 精度换 1.6× 提速 + ~4× 压缩）。<b>两条 INT8 路线代价不同</b>：onnxruntime QDQ INT8 在 n=50 与 FP32 统计不可分（报告表 2），但 TRT 原生熵校准 INT8 在 Orin 闭环掉 ~0.12（报告表 5）——「INT8 无损」只对 onnxruntime 路线成立、不能外推到 TRT。表中精度列为 onnxruntime 口径；DDIM-50 + INT8 仅 6.8Hz 不过 10Hz。完整五张表与诚实边界见报告。</p>
     </section>
 
     <!-- ============ 核心方法 ============ -->
@@ -139,7 +142,9 @@
       <p class="sec-lead">完整方法学（模型/权重来源、数据集、校准集、指标定义、确切命令、环境版本）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>；踩坑记录见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/PROBLEMS.md" target="_blank" rel="noopener">PROBLEMS.md</a>。下面是方法总览。</p>
       <p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>
       <div class="pipeline">训练 (8GB) ──► ONNX 导出 (拆 encoder+unet) ──► INT8 PTQ (onnxruntime QDQ) ──► 步数压缩 (DDIM) ──► TensorRT (Orin)</div>
+      <p class="ds-figcap">图 3 · 压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）</p>
       <div class="tbl-wrap"><table class="tbl">
+        <caption>表 2 · 压缩方法链各环节的做法与理由</caption>
         <tr><th>环节</th><th>做法与理由</th></tr>
         <tr><td class="rowh">拆两组件导出</td><td>扩散采样循环（UNet×N）留在 runtime，只导出 encoder 与 UNet 单步前向——扩散模型部署标准做法，也让步数成为 runtime 旋钮</td></tr>
         <tr><td class="rowh">normalizer 烘焙</td><td>烘焙进 encoder ONNX，导出图直接吃原始 obs（image [0,1] + agent_pos），动作反归一化留在 runtime</td></tr>
