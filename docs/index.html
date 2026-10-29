@@ -140,7 +140,7 @@
     <section class="ds-section" id="method">
       <h2 class="ds-h2">核心方法</h2>
       <p class="sec-lead">完整方法学（模型/权重来源、数据集、校准集、指标定义、确切命令、环境版本）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>；踩坑记录见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/PROBLEMS.md" target="_blank" rel="noopener">PROBLEMS.md</a>。下面是方法总览。</p>
-      <p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>
+      <p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。<b>输入</b> 2 帧观测（每帧 = 96×96 RGB 图像 [0,1] + agent 2D 像素坐标），<b>输出</b> 16 步 2D 动作序列（执行取前 8 步后重规划）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>
       <div class="pipeline">训练 (8GB) ──► ONNX 导出 (拆 encoder+unet) ──► INT8 PTQ (onnxruntime QDQ) ──► 步数压缩 (DDIM) ──► TensorRT (Orin)</div>
       <p class="ds-figcap">图 3 · 压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）</p>
       <div class="tbl-wrap"><table class="tbl">
