@@ -11,7 +11,6 @@
 <script src="https://ranpin.github.io/theme.js"></script>
 <style>
   /* 演示 tab 专属视觉；结构色一律引用外壳的 --ds-* 变量 */
-  .demo-wrap{font-size:.98rem;}
   .demo-lead{margin:.3rem 0 1rem;}
   .demo-task{background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); padding:.75rem 1rem; margin:0 0 1rem;}
   .demo-task p{margin:.45rem 0;}
@@ -30,22 +29,15 @@
   /* 评测结果 / 核心方法 精简板块 */
   .sec-lead{color:var(--ds-muted); font-size:13.5px; margin:0 0 16px; line-height:1.65;}
   .sec-lead a{color:var(--ds-accent);}
-  .sub{font-size:15px; font-weight:700; color:var(--ds-text); margin:24px 0 2px;}
+  .sub{font-size:1rem; font-weight:700; color:var(--ds-text); margin:24px 0 2px; text-indent:0;}
   .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:4px 0 0;}
   @media (max-width:720px){.stats{grid-template-columns:repeat(2,1fr);}}
   .stat{background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); padding:16px 14px; text-align:center;}
   .stat .v{font-size:24px; font-weight:700; color:var(--ds-accent); line-height:1.1; font-variant-numeric:tabular-nums;}
   .stat .v small{font-size:13px; font-weight:600;}
   .stat .k{font-size:12px; color:var(--ds-muted); margin-top:6px; line-height:1.4;}
-  .tbl-wrap{overflow-x:auto;}
-  .tbl{width:100%; border-collapse:collapse; font-size:13.5px; margin:6px 0 0; background:var(--ds-panel); border:1px solid var(--ds-border); border-radius:var(--ds-radius); overflow:hidden;}
-  .tbl th,.tbl td{padding:8px 12px; text-align:left; border-bottom:1px solid var(--ds-border); font-variant-numeric:tabular-nums;}
-  .tbl th{background:var(--ds-code-bg); font-weight:600; font-size:12.5px; color:var(--ds-muted);}
-  .tbl tr:last-child td{border-bottom:none;}
-  .tbl td.rowh{color:var(--ds-muted); font-weight:600;}
   .sec-note{color:var(--ds-muted); font-size:12.5px; margin-top:12px; line-height:1.65;}
   .sec-note a{color:var(--ds-accent);}
-  .pipeline{background:var(--ds-code-bg); border:1px solid var(--ds-border); border-radius:10px; padding:15px; overflow-x:auto; margin:10px 0 4px; font-family:var(--ds-mono); font-size:12.5px; color:var(--ds-text); text-align:center; white-space:nowrap;}
   code{background:var(--ds-code-bg); border:1px solid var(--ds-border); border-radius:5px; padding:1px 6px; font-family:var(--ds-mono); font-size:12.5px; color:var(--ds-accent-strong);}
 </style>
 </head>
@@ -125,7 +117,7 @@
         <div class="stat"><div class="v">18<small>Hz</small></div><div class="k">Orin DDIM-16 INT8<br>全墙钟实测（过 10Hz 环）</div></div>
         <div class="stat"><div class="v">−0.12</div><div class="k">TRT 原生 INT8 闭环掉分<br>vs FP16 · 6 种子 p&lt;0.001</div></div>
       </div>
-      <div class="tbl-wrap"><table class="tbl">
+      <div class="ds-tablewrap"><table class="ds-table">
         <caption>表 1 · Orin 实测延迟与精度 · 全 predict_action 墙钟（batch=1 · TensorRT 10.7）</caption>
         <tr><th>配置</th><th>DDIM 步数</th><th>精度 (n50)</th><th>墙钟 (ms)</th><th>吞吐 (Hz)</th><th>过 10Hz</th></tr>
         <tr><td class="rowh">全 FP16</td><td>50</td><td>0.814</td><td>238</td><td>4.2</td><td>✗</td></tr>
@@ -141,9 +133,39 @@
       <h2 class="ds-h2">核心方法</h2>
       <p class="sec-lead">完整方法学（模型/权重来源、数据集、校准集、指标定义、确切命令、环境版本）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>；踩坑记录见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/PROBLEMS.md" target="_blank" rel="noopener">PROBLEMS.md</a>。下面是方法总览。</p>
       <p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。<b>输入</b> 2 帧观测（每帧 = 96×96 RGB 图像 [0,1] + agent 2D 像素坐标），<b>输出</b> 16 步 2D 动作序列（执行取前 8 步后重规划）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>
-      <div class="pipeline">训练 (8GB) ──► ONNX 导出 (拆 encoder+unet) ──► INT8 PTQ (onnxruntime QDQ) ──► 步数压缩 (DDIM) ──► TensorRT (Orin)</div>
+      <div class="ds-dgwrap">
+        <svg class="ds-dg" viewBox="0 0 1000 120" role="img" aria-label="压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）">
+          <defs>
+            <marker id="hbw-dg-arr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+              <polygon points="0 0, 9 3.5, 0 7" fill="var(--ds-faint)"/>
+            </marker>
+          </defs>
+          <!-- 连线 -->
+          <line class="dg-edge" x1="203" y1="60" x2="233" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" x1="451" y1="60" x2="481" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" x1="607" y1="60" x2="637" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" x1="759" y1="60" x2="789" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <!-- 盒子 -->
+          <rect x="24" y="30" width="176" height="60" rx="8" fill="var(--ds-warn-soft)" stroke="var(--ds-warn)" stroke-width="1.4"/>
+          <rect x="236" y="30" width="212" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+          <rect x="484" y="30" width="120" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+          <rect x="640" y="30" width="116" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+          <rect x="792" y="30" width="180" height="60" rx="8" fill="var(--ds-ok-soft)" stroke="var(--ds-ok)" stroke-width="1.4"/>
+          <!-- 文字 -->
+          <text class="dg-name" x="112" y="56" text-anchor="middle">训练</text>
+          <text class="dg-sub" x="112" y="70" text-anchor="middle">DDPM-100 · 8GB 3070 · 87.6%</text>
+          <text class="dg-name" x="342" y="56" text-anchor="middle">ONNX 导出</text>
+          <text class="dg-sub" x="342" y="70" text-anchor="middle">拆 encoder+unet · normalizer 烘焙</text>
+          <text class="dg-name" x="544" y="56" text-anchor="middle">INT8 PTQ</text>
+          <text class="dg-sub" x="544" y="70" text-anchor="middle">onnxruntime QDQ</text>
+          <text class="dg-name" x="698" y="56" text-anchor="middle">DDIM 减步</text>
+          <text class="dg-sub" x="698" y="70" text-anchor="middle">100→50→16→5 步</text>
+          <text class="dg-name" x="882" y="56" text-anchor="middle">TensorRT · Orin</text>
+          <text class="dg-sub" x="882" y="70" text-anchor="middle">DDIM-16 INT8 · 55ms / 18.2Hz</text>
+        </svg>
+      </div>
       <p class="ds-figcap">图 3 · 压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）</p>
-      <div class="tbl-wrap"><table class="tbl">
+      <div class="ds-tablewrap"><table class="ds-table">
         <caption>表 2 · 压缩方法链各环节的做法与理由</caption>
         <tr><th>环节</th><th>做法与理由</th></tr>
         <tr><td class="rowh">拆两组件导出</td><td>扩散采样循环（UNet×N）留在 runtime，只导出 encoder 与 UNet 单步前向——扩散模型部署标准做法，也让步数成为 runtime 旋钮</td></tr>
