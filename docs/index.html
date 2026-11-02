@@ -134,35 +134,97 @@
       <p class="sec-lead">完整方法学（模型/权重来源、数据集、校准集、指标定义、确切命令、环境版本）见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>；踩坑记录见 <a href="https://github.com/ranpin/homebot-wm/blob/main/docs/compression/PROBLEMS.md" target="_blank" rel="noopener">PROBLEMS.md</a>。下面是方法总览。</p>
       <p class="sec-note" style="margin-top:0">载体模型 = Diffusion Policy（image Push-T 变体，262M = 251.5M 扩散 UNet + 11.2M 视觉编码器）。<b>输入</b> 2 帧观测（每帧 = 96×96 RGB 图像 [0,1] + agent 2D 像素坐标），<b>输出</b> 16 步 2D 动作序列（执行取前 8 步后重规划）。压缩方法链<b>任务无关</b>——换载体只需改 I/O shape 与校准数据：</p>
       <div class="ds-dgwrap">
-        <svg class="ds-dg" viewBox="0 0 1000 120" role="img" aria-label="压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）">
+        <svg class="ds-dg" viewBox="0 0 1000 120" role="img" aria-label="压缩方法链（动态图）：数据包沿 训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）穿行，经过的节点逐个脉冲亮起；DDIM 步数副标逐词轮播高亮">
           <defs>
             <marker id="hbw-dg-arr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
               <polygon points="0 0, 9 3.5, 0 7" fill="var(--ds-faint)"/>
             </marker>
+            <!-- 视觉层·渐变立体盒：两 stop 属性值均为纯色回退，外壳 CSS 把末 stop 升级为 color-mix 加深（随主题翻转） -->
+            <linearGradient id="hbw-g-warn" class="dg-grad" data-c="warn" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--ds-warn-soft)"/>
+              <stop offset="1" stop-color="var(--ds-warn-soft)"/>
+            </linearGradient>
+            <linearGradient id="hbw-g-alt" class="dg-grad" data-c="alt" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--ds-alt-soft)"/>
+              <stop offset="1" stop-color="var(--ds-alt-soft)"/>
+            </linearGradient>
+            <linearGradient id="hbw-g-ok" class="dg-grad" data-c="ok" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--ds-ok-soft)"/>
+              <stop offset="1" stop-color="var(--ds-ok-soft)"/>
+            </linearGradient>
+            <!-- 图标 symbol：复制自 demo-page-iteration skill assets/dg-icons.svg（外部 use 引用 Chrome/Safari 静默失败，必须内联） -->
+            <symbol id="ico-zap" viewBox="0 0 24 24"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10"/></symbol>
+            <symbol id="ico-export" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4l4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+            <symbol id="ico-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></symbol>
+            <symbol id="ico-stairs" viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h4V6h4"/></symbol>
+            <symbol id="ico-chip" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></symbol>
           </defs>
-          <!-- 连线 -->
-          <line class="dg-edge" x1="203" y1="60" x2="233" y2="60" marker-end="url(#hbw-dg-arr)"/>
-          <line class="dg-edge" x1="451" y1="60" x2="481" y2="60" marker-end="url(#hbw-dg-arr)"/>
-          <line class="dg-edge" x1="607" y1="60" x2="637" y2="60" marker-end="url(#hbw-dg-arr)"/>
-          <line class="dg-edge" x1="759" y1="60" x2="789" y2="60" marker-end="url(#hbw-dg-arr)"/>
-          <!-- 盒子 -->
-          <rect x="24" y="30" width="176" height="60" rx="8" fill="var(--ds-warn-soft)" stroke="var(--ds-warn)" stroke-width="1.4"/>
-          <rect x="236" y="30" width="212" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
-          <rect x="484" y="30" width="120" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
-          <rect x="640" y="30" width="116" height="60" rx="8" fill="var(--ds-alt-soft)" stroke="var(--ds-alt)" stroke-width="1.4"/>
-          <rect x="792" y="30" width="180" height="60" rx="8" fill="var(--ds-ok-soft)" stroke="var(--ds-ok)" stroke-width="1.4"/>
-          <!-- 文字 -->
-          <text class="dg-name" x="112" y="56" text-anchor="middle">训练</text>
-          <text class="dg-sub" x="112" y="70" text-anchor="middle">DDPM-100 · 8GB 3070 · 87.6%</text>
-          <text class="dg-name" x="342" y="56" text-anchor="middle">ONNX 导出</text>
-          <text class="dg-sub" x="342" y="70" text-anchor="middle">拆 encoder+unet · normalizer 烘焙</text>
-          <text class="dg-name" x="544" y="56" text-anchor="middle">INT8 PTQ</text>
-          <text class="dg-sub" x="544" y="70" text-anchor="middle">onnxruntime QDQ</text>
-          <text class="dg-name" x="698" y="56" text-anchor="middle">DDIM 减步</text>
-          <text class="dg-sub" x="698" y="70" text-anchor="middle">100→50→16→5 步</text>
-          <text class="dg-name" x="882" y="56" text-anchor="middle">TensorRT · Orin</text>
-          <text class="dg-sub" x="882" y="70" text-anchor="middle">DDIM-16 INT8 · 55ms / 18.2Hz</text>
+          <!-- 连线（data-from/to 供悬停聚焦-上下文；层序：连线 → 脉冲环 → 数据包 → 节点组） -->
+          <line class="dg-edge" data-from="hbw-train" data-to="hbw-onnx" x1="203" y1="60" x2="233" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" data-from="hbw-onnx" data-to="hbw-int8" x1="451" y1="60" x2="481" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" data-from="hbw-int8" data-to="hbw-ddim" x1="607" y1="60" x2="637" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <line class="dg-edge" data-from="hbw-ddim" data-to="hbw-trt" x1="759" y1="60" x2="789" y2="60" marker-end="url(#hbw-dg-arr)"/>
+          <!-- 脉冲环：数据包经过时亮起（与数据包同 6s 周期，keyTimes 按到达分数 a=(节点中心−112)/770 开槽；末节点收槽不超 1） -->
+          <rect class="dg-ring" x="21" y="27" width="182" height="66" rx="11" stroke="var(--ds-warn)" opacity="0">
+            <animate attributeName="opacity" values="0;.85;0;0" keyTimes="0;.05;.2;1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </rect>
+          <rect class="dg-ring" x="233" y="27" width="218" height="66" rx="11" stroke="var(--ds-alt)" opacity="0">
+            <animate attributeName="opacity" values="0;0;.85;0;0" keyTimes="0;.29;.34;.49;1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </rect>
+          <rect class="dg-ring" x="481" y="27" width="126" height="66" rx="11" stroke="var(--ds-alt)" opacity="0">
+            <animate attributeName="opacity" values="0;0;.85;0;0" keyTimes="0;.55;.60;.75;1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </rect>
+          <rect class="dg-ring" x="637" y="27" width="122" height="66" rx="11" stroke="var(--ds-alt)" opacity="0">
+            <animate attributeName="opacity" values="0;0;.85;0;0" keyTimes="0;.75;.80;.95;1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </rect>
+          <rect class="dg-ring" x="789" y="27" width="186" height="66" rx="11" stroke="var(--ds-ok)" opacity="0">
+            <animate attributeName="opacity" values="0;0;.85;0" keyTimes="0;.90;.95;1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </rect>
+          <!-- 数据包：主链单包 6s 匀速穿行（画在盒子下层，盒间空隙可见 = 模型逐环节压缩，
+               首尾折返点在首末盒中心、被盒体遮挡） -->
+          <g transform="translate(112,60)"><g class="dg-packet-g" opacity="0">
+            <circle r="8" fill="var(--ds-alt)" opacity=".22"/>
+            <circle r="3.2" fill="var(--ds-alt)"/>
+            <animateMotion dur="6s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0 H770"/>
+            <animate attributeName="opacity" from="1" to="1" dur="6s" begin="indefinite" repeatCount="indefinite"/>
+          </g></g>
+          <!-- 五阶段主链：g.dg-node（data-id 供悬停聚焦、--dg-i 入场序号、--dg-glow 悬停光效色） -->
+          <g class="dg-node" data-id="hbw-train" style="--dg-glow:var(--ds-warn);--dg-i:0">
+            <rect x="24" y="30" width="176" height="60" rx="8" fill="url(#hbw-g-warn)" stroke="var(--ds-warn)" stroke-width="1.4"/>
+            <use class="dg-ico" href="#ico-zap" x="33" y="39" width="14" height="14" style="color:var(--ds-warn)"/>
+            <text class="dg-name" x="112" y="56" text-anchor="middle">训练</text>
+            <text class="dg-sub" x="112" y="70" text-anchor="middle">DDPM-100 · 8GB 3070 · 87.6%</text>
+          </g>
+          <g class="dg-node" data-id="hbw-onnx" style="--dg-glow:var(--ds-alt);--dg-i:1">
+            <rect x="236" y="30" width="212" height="60" rx="8" fill="url(#hbw-g-alt)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+            <use class="dg-ico" href="#ico-export" x="245" y="39" width="14" height="14" style="color:var(--ds-alt)"/>
+            <text class="dg-name" x="342" y="56" text-anchor="middle">ONNX 导出</text>
+            <text class="dg-sub" x="342" y="70" text-anchor="middle">拆 encoder+unet · normalizer 烘焙</text>
+          </g>
+          <g class="dg-node" data-id="hbw-int8" style="--dg-glow:var(--ds-alt);--dg-i:2">
+            <rect x="484" y="30" width="120" height="60" rx="8" fill="url(#hbw-g-alt)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+            <use class="dg-ico" href="#ico-grid" x="493" y="39" width="14" height="14" style="color:var(--ds-alt)"/>
+            <text class="dg-name" x="544" y="56" text-anchor="middle">INT8 PTQ</text>
+            <text class="dg-sub" x="544" y="70" text-anchor="middle">onnxruntime QDQ</text>
+          </g>
+          <g class="dg-node" data-id="hbw-ddim" style="--dg-glow:var(--ds-alt);--dg-i:3">
+            <rect x="640" y="30" width="116" height="60" rx="8" fill="url(#hbw-g-alt)" stroke="var(--ds-alt)" stroke-width="1.4"/>
+            <use class="dg-ico" href="#ico-stairs" x="649" y="39" width="14" height="14" style="color:var(--ds-alt)"/>
+            <text class="dg-name" x="698" y="56" text-anchor="middle">DDIM 减步</text>
+            <text class="dg-sub" x="698" y="70" text-anchor="middle"><tspan class="dg-cyc">100</tspan>→<tspan class="dg-cyc" style="animation-delay:1.2s">50</tspan>→<tspan class="dg-cyc" style="animation-delay:2.4s">16</tspan>→<tspan class="dg-cyc" style="animation-delay:3.6s">5</tspan> 步</text>
+          </g>
+          <g class="dg-node" data-id="hbw-trt" style="--dg-glow:var(--ds-ok);--dg-i:4">
+            <rect x="792" y="30" width="180" height="60" rx="8" fill="url(#hbw-g-ok)" stroke="var(--ds-ok)" stroke-width="1.4"/>
+            <use class="dg-ico" href="#ico-chip" x="801" y="39" width="14" height="14" style="color:var(--ds-ok)"/>
+            <text class="dg-name" x="882" y="56" text-anchor="middle">TensorRT · Orin</text>
+            <text class="dg-sub" x="882" y="70" text-anchor="middle">DDIM-16 INT8 · 55ms / 18.2Hz</text>
+          </g>
         </svg>
+        <div class="dg-legend">
+          <span style="--c:var(--ds-warn)"><i></i>训练</span>
+          <span style="--c:var(--ds-alt)"><i></i>模型压缩</span>
+          <span style="--c:var(--ds-ok)"><i></i>端侧部署</span>
+        </div>
       </div>
       <p class="ds-figcap">图 3 · 压缩方法链：训练 → ONNX 导出 → INT8 PTQ → DDIM 减步 → TensorRT（Orin）</p>
       <div class="ds-tablewrap"><table class="ds-table">
